@@ -5,6 +5,7 @@ use termion::{clear, cursor, raw::IntoRawMode, terminal_size};
 struct FileInfo {
     name: String,
     is_dir: bool,
+    is_symlink: bool,
     path: PathBuf,
 }
 
@@ -36,10 +37,12 @@ fn get_file_names(directory: &str) -> io::Result<Vec<FileInfo>> {
         let path = entry.path();
         let file_name = entry.file_name();
 
+        let metadata = entry.metadata()?;
         if let Some(name) = file_name.to_str() {
             file_names.push(FileInfo {
                 name: name.to_string(),
-                is_dir: path.is_dir(),
+                is_dir: metadata.is_dir(),
+                is_symlink: metadata.file_type().is_symlink(),
                 path: path.clone(),
             });
         }
@@ -63,6 +66,8 @@ fn render_pane(
 
         if file_info.is_dir {
             write!(stderr, "\x1b[34m")?;
+        } else if file_info.is_symlink {
+            write!(stderr, "\x1b[36m")?;
         }
 
         let mut line = file_info.name.clone();
@@ -80,7 +85,7 @@ fn render(
     parent_file_names: &Vec<FileInfo>,
     file_names: &Vec<FileInfo>,
 ) -> io::Result<()> {
-    let (width, height) = terminal_size()?;
+    let (width, _) = terminal_size()?;
     write!(stderr, "{}", clear::All)?;
 
     let child_file_names = if index >= 0
