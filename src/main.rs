@@ -103,4 +103,57 @@ fn render(
 }
 
 fn main() -> Result<(), io::Error> {
+    let mut stderr = io::stderr().into_raw_mode()?;
+    write!(stderr, "\x1b[?1049h")?;
+    let mut index = 0;
+    write!(
+        stderr,
+        "{}{}{}",
+        clear::All,
+        cursor::Hide,
+        cursor::Goto(1, 1)
+    )?;
+
+    let mut current_dir_files = get_file_names(".")?;
+    let mut parent_dir_files = get_file_names("..")?;
+    render(&mut stderr, index, &parent_dir_files, &current_dir_files)?;
+
+    for byte in io::stdin().bytes() {
+        match byte? {
+            b'q' => break,
+            b'j' => index += 1,
+            b'k' => index -= 1,
+            b'l' => {
+                if index >= 0 && index < current_dir_files.len().try_into().unwrap() {
+                    try_cd(&current_dir_files[index as usize].path)?;
+                }
+                index = 0;
+            }
+            b'h' => {
+                try_cd(&PathBuf::from(".."))?;
+                index = 0;
+            }
+            _ => {}
+        }
+
+        if index < 0 {
+            index = 0;
+        }
+
+        current_dir_files = get_file_names(".")?;
+        if index >= current_dir_files.len() as i32 {
+            index = current_dir_files.len() as i32 - 1;
+        }
+
+        parent_dir_files = get_file_names("..")?;
+        render(&mut stderr, index, &parent_dir_files, &current_dir_files)?;
+    }
+
+    write!(stderr, "{}{}", cursor::Show, clear::All)?;
+    write!(stderr, "\x1b[?1049l")?;
+    stderr.flush()?;
+
+    write!(stderr, "Current directory: {}\n", get_cwd())?;
+
+    Ok(())
 }
