@@ -8,6 +8,22 @@ struct FileInfo {
     path: PathBuf,
 }
 
+fn print_width(
+    stderr: &mut dyn Write,
+    x: u16,
+    y: u16,
+    width: u16,
+    color: &str,
+    content: &str,
+) -> io::Result<()> {
+    write!(stderr, "{}", cursor::Goto(x, y))?;
+    let mut line = content.to_string();
+    line.truncate(width as usize);
+    let blank_space = " ".repeat((width - line.len() as u16) as usize);
+    write!(stderr, "{}{line}\x1b[0m{}", color, blank_space)?;
+    Ok(())
+}
+
 fn get_cwd() -> String {
     let mut path = PathBuf::new();
     if let Ok(current_dir) = std::env::current_dir() {
@@ -62,53 +78,72 @@ fn render_pane(
     x: u16,
     y: u16,
     index: i32,
-    file_names: &Vec<FileInfo>,
+    file_names: &[FileInfo],
     width: u16,
+    height: u16,
 ) -> io::Result<()> {
-    for (i, file_info) in file_names.iter().enumerate() {
-        write!(stderr, "{}", cursor::Goto(1 + x, i as u16 + 1 + y))?;
-        if index == i as i32 {
-            write!(stderr, "\x1b[7m")?;
-        }
+    for i in 0..height {
+        let i = i32::from(i);
 
-        if file_info.is_dir {
-            write!(stderr, "\x1b[34m")?;
-        } else if file_info.is_symlink {
-            write!(stderr, "\x1b[36m")?;
-        }
+        let x = x + 1;
+        let y = u16::try_from(i).expect("Invalid index") + 1 + y;
 
-        let mut line = file_info.name.clone();
-        line.truncate(width as usize);
-        write!(stderr, "{}", line)?;
-        write!(stderr, "\x1b[0m")?;
+        if i >= file_names.len().try_into().expect("Invalid index") {
+            print_width(stderr, x, y, width, "\x1b[0m", "")?;
+        } else if index == i {
+            let file_info = &file_names[usize::try_from(i).expect("Invalid index")];
+            print_width(stderr, x, y, width, "\x1b[7m", &file_info.name)?;
+        } else {
+            let file_info = &file_names[usize::try_from(i).expect("Invalid index")];
+            print_width(
+                stderr,
+                x,
+                y,
+                width,
+                file_info.color.as_str(),
+                &file_info.name,
+            )?;
+        }
     }
 
     Ok(())
 }
 
-fn render(
-    stderr: &mut dyn Write,
-    index: i32,
-    parent_file_names: &Vec<FileInfo>,
-    file_names: &Vec<FileInfo>,
-) -> io::Result<()> {
-    let (width, _) = terminal_size()?;
-    write!(stderr, "{}", clear::All)?;
+fn render(stderr: &mut dyn Write, index: i32) -> io::Result<()> {
+    let file_names = get_file_names(".")?;
+    let parent_file_names = get_file_names("..")?;
 
-    let child_file_names = if index >= 0
-        && index < file_names.len().try_into().unwrap()
-        && file_names[index as usize].is_dir
-    {
-        get_file_names(file_names[index as usize].path.to_str().unwrap_or("."))?
-    } else {
-        Vec::new()
-    };
+    let (width, height) = terminal_size()?;
+
+    let child_file_names = get_file_names(
+        file_names[usize::try_from(index).expect("Invalid index")]
+            .path
+            .to_str()
+            .unwrap_or("."),
+    )?;
 
     let pane_width = width / 3;
 
-    render_pane(stderr, 0, 1, -1, parent_file_names, pane_width)?;
-    render_pane(stderr, width / 3, 1, index, file_names, pane_width)?;
-    render_pane(stderr, 2 * width / 3, 1, -1, &child_file_names, pane_width)?;
+    print_width(stderr, 1, 1, width - 2, "\x1b[1;32m", get_cwd().as_str())?;
+    render_pane(stderr, 0, 2, -1, &parent_file_names, pane_width, height - 1)?;
+    render_pane(
+        stderr,
+        width / 3,
+        2,
+        index,
+        &file_names,
+        pane_width,
+        height - 1,
+    )?;
+    render_pane(
+        stderr,
+        2 * width / 3,
+        2,
+        -1,
+        &child_file_names,
+        pane_width,
+        height - 1,
+    )?;
 
     stderr.flush()?;
     Ok(())
