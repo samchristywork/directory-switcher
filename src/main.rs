@@ -151,34 +151,45 @@ fn render(stderr: &mut dyn Write, index: i32) -> io::Result<()> {
 
 fn main() -> Result<(), io::Error> {
     let mut stderr = io::stderr().into_raw_mode()?;
-    write!(stderr, "\x1b[?1049h")?;
     let mut index = 0;
     write!(
         stderr,
-        "{}{}{}",
+        "\x1b[?1049h{}{}{}",
         clear::All,
         cursor::Hide,
         cursor::Goto(1, 1)
     )?;
 
-    let mut current_dir_files = get_file_names(".")?;
-    let mut parent_dir_files = get_file_names("..")?;
-    render(&mut stderr, index, &parent_dir_files, &current_dir_files)?;
+    render(&mut stderr, index)?;
 
     for byte in io::stdin().bytes() {
+        let current_dir_files = get_file_names(".")?;
         match byte? {
             b'q' => break,
             b'j' => index += 1,
             b'k' => index -= 1,
             b'l' => {
-                if index >= 0 && index < current_dir_files.len().try_into().unwrap() {
-                    try_cd(&current_dir_files[index as usize].path)?;
+                if index >= 0 && index < current_dir_files.len().try_into().expect("Invalid index")
+                {
+                    try_cd(
+                        &current_dir_files[usize::try_from(index).expect("Invalid index")].path,
+                    )?;
                 }
                 index = 0;
             }
             b'h' => {
+                let cwd = get_cwd();
+                let dirname = cwd.split('/').collect::<Vec<_>>();
+                let old_dir = dirname.last().unwrap();
                 try_cd(&PathBuf::from(".."))?;
+                let files = get_file_names(".")?;
                 index = 0;
+                for i in 0..files.len() {
+                    if files[i].name == *old_dir {
+                        index = i as i32;
+                        break;
+                    }
+                }
             }
             _ => {}
         }
@@ -187,17 +198,15 @@ fn main() -> Result<(), io::Error> {
             index = 0;
         }
 
-        current_dir_files = get_file_names(".")?;
-        if index >= current_dir_files.len() as i32 {
-            index = current_dir_files.len() as i32 - 1;
+        let current_dir_files = get_file_names(".")?;
+        if index >= i32::try_from(current_dir_files.len()).expect("Invalid index") {
+            index = i32::try_from(current_dir_files.len()).expect("Invalid index") - 1;
         }
 
-        parent_dir_files = get_file_names("..")?;
-        render(&mut stderr, index, &parent_dir_files, &current_dir_files)?;
+        render(&mut stderr, index)?;
     }
 
-    write!(stderr, "{}{}", cursor::Show, clear::All)?;
-    write!(stderr, "\x1b[?1049l")?;
+    write!(stderr, "{}{}\x1b[?1049l", cursor::Show, clear::All)?;
     stderr.flush()?;
 
     write!(stderr, "Current directory: {}\n", get_cwd())?;
