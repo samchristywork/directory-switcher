@@ -8,6 +8,21 @@ struct FileInfo {
     path: PathBuf,
 }
 
+fn get_cwd() -> String {
+    let mut path = PathBuf::new();
+    if let Ok(current_dir) = std::env::current_dir() {
+        path = current_dir;
+    }
+    path.to_str().unwrap_or(".").to_string()
+}
+
+fn try_cd(path: &PathBuf) -> io::Result<()> {
+    if path.is_dir() {
+        std::env::set_current_dir(path)?;
+    }
+    Ok(())
+}
+
 fn get_file_names(directory: &str) -> io::Result<Vec<FileInfo>> {
     let mut file_names = Vec::new();
 
