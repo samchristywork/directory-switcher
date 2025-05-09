@@ -47,5 +47,60 @@ fn get_file_names(directory: &str) -> io::Result<Vec<FileInfo>> {
     Ok(file_names)
 }
 
+fn render_pane(
+    stderr: &mut dyn Write,
+    x: u16,
+    y: u16,
+    index: i32,
+    file_names: &Vec<FileInfo>,
+    width: u16,
+) -> io::Result<()> {
+    for (i, file_info) in file_names.iter().enumerate() {
+        write!(stderr, "{}", cursor::Goto(1 + x, i as u16 + 1 + y))?;
+        if index == i as i32 {
+            write!(stderr, "\x1b[7m")?;
+        }
+
+        if file_info.is_dir {
+            write!(stderr, "\x1b[34m")?;
+        }
+
+        let mut line = file_info.name.clone();
+        line.truncate(width as usize);
+        write!(stderr, "{}", line)?;
+        write!(stderr, "\x1b[0m")?;
+    }
+
+    Ok(())
+}
+
+fn render(
+    stderr: &mut dyn Write,
+    index: i32,
+    parent_file_names: &Vec<FileInfo>,
+    file_names: &Vec<FileInfo>,
+) -> io::Result<()> {
+    let (width, height) = terminal_size()?;
+    write!(stderr, "{}", clear::All)?;
+
+    let child_file_names = if index >= 0
+        && index < file_names.len().try_into().unwrap()
+        && file_names[index as usize].is_dir
+    {
+        get_file_names(file_names[index as usize].path.to_str().unwrap_or("."))?
+    } else {
+        Vec::new()
+    };
+
+    let pane_width = width / 3;
+
+    render_pane(stderr, 0, 1, -1, parent_file_names, pane_width)?;
+    render_pane(stderr, width / 3, 1, index, file_names, pane_width)?;
+    render_pane(stderr, 2 * width / 3, 1, -1, &child_file_names, pane_width)?;
+
+    stderr.flush()?;
+    Ok(())
+}
+
 fn main() -> Result<(), io::Error> {
 }
