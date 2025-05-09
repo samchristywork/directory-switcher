@@ -181,8 +181,9 @@ fn main() -> Result<(), io::Error> {
                     try_cd(
                         &current_dir_files[usize::try_from(index).expect("Invalid index")].path,
                     )?;
+                } else {
+                    index = 0;
                 }
-                index = 0;
             }
             b'h' => {
                 let cwd = get_cwd();
