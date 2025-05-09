@@ -4,8 +4,7 @@ use termion::{clear, cursor, raw::IntoRawMode, terminal_size};
 
 struct FileInfo {
     name: String,
-    is_dir: bool,
-    is_symlink: bool,
+    color: String,
     path: PathBuf,
 }
 
@@ -32,17 +31,25 @@ fn get_file_names(directory: &str) -> io::Result<Vec<FileInfo>> {
         return Ok(file_names);
     }
 
-    for entry in std::fs::read_dir(directory)? {
+    let entries = std::fs::read_dir(directory)?;
+    for entry in entries {
         let entry = entry?;
         let path = entry.path();
         let file_name = entry.file_name();
 
         let metadata = entry.metadata()?;
+        let color = if metadata.is_dir() {
+            "\x1b[1;34m"
+        } else if metadata.file_type().is_symlink() {
+            "\x1b[1;36m"
+        } else {
+            "\x1b[1;37m"
+        };
+
         if let Some(name) = file_name.to_str() {
             file_names.push(FileInfo {
                 name: name.to_string(),
-                is_dir: metadata.is_dir(),
-                is_symlink: metadata.file_type().is_symlink(),
+                color: color.to_string(),
                 path: path.clone(),
             });
         }
