@@ -149,8 +149,14 @@ fn file_stdout(file_name: &str) -> String {
 }
 
 fn render(stderr: &mut dyn Write, index: i32) -> io::Result<()> {
+    let current_dir = get_cwd();
+
     let file_names = get_file_names(".")?;
-    let parent_file_names = get_file_names("..")?;
+    let parent_file_names = if current_dir == "/" {
+        vec![]
+    } else {
+        get_file_names("..")?
+    };
 
     let (width, height) = terminal_size()?;
 
