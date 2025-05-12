@@ -93,9 +93,23 @@ fn render_pane(
     y: u16,
     index: i32,
     file_names: &[FileInfo],
+    permission_denied: bool,
     width: u16,
     height: u16,
 ) -> io::Result<()> {
+    if permission_denied {
+        for i in 0..height {
+            let i = i32::from(i);
+
+            let x = x + 1;
+            let y = u16::try_from(i).expect("Invalid index") + 1 + y;
+            print_width(stderr, x, y, width, "\x1b[0m", "")?;
+        }
+
+        print_width(stderr, x + 1, 3, width, "\x1b[1;31m", "Permission Denied")?;
+        return Ok(());
+    }
+
     for i in 0..height {
         let i = i32::from(i);
 
@@ -134,18 +148,33 @@ fn render(stderr: &mut dyn Write, index: i32) -> io::Result<()> {
             .path
             .to_str()
             .unwrap_or("."),
-    )?;
+    );
 
     let pane_width = width / 3;
 
-    print_width(stderr, 1, 1, width - 2, "\x1b[1;32m", get_cwd().as_str())?;
-    render_pane(stderr, 0, 2, -1, &parent_file_names, pane_width, height - 1)?;
+    let filename = file_names
+        .get(usize::try_from(index).expect("Invalid index"))
+        .map_or("..", |f| f.name.as_str());
+    print_width(stderr, 1, 2, width, "", &file_stdout(filename))?;
+
+    print_width(stderr, 1, 1, width, "\x1b[1;32m", get_cwd().as_str())?;
+    render_pane(
+        stderr,
+        0,
+        2,
+        -1,
+        &parent_file_names,
+        false,
+        pane_width,
+        height - 1,
+    )?;
     render_pane(
         stderr,
         width / 3,
         2,
         index,
         &file_names,
+        false,
         pane_width,
         height - 1,
     )?;
@@ -154,7 +183,8 @@ fn render(stderr: &mut dyn Write, index: i32) -> io::Result<()> {
         2 * width / 3,
         2,
         -1,
-        &child_file_names,
+        child_file_names.as_ref().unwrap_or(&vec![]),
+        child_file_names.is_err(),
         pane_width,
         height - 1,
     )?;
