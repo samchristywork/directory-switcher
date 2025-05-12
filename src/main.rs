@@ -19,8 +19,15 @@ fn print_width(
     write!(stderr, "{}", cursor::Goto(x, y))?;
     let mut line = content.to_string();
     line.truncate(width as usize);
-    let blank_space = " ".repeat((width - line.len() as u16) as usize);
-    write!(stderr, "{}{line}\x1b[0m{}", color, blank_space)?;
+    let n = width - u16::try_from(line.len()).expect("Invalid length");
+    let blank_space = " ".repeat(n as usize);
+    write!(stderr, "{color}{line}\x1b[0m{blank_space}")?;
+    Ok(())
+}
+
+fn write_to_file(file_path: &str, content: &str) -> io::Result<()> {
+    let mut file = std::fs::File::create(file_path)?;
+    file.write_all(content.as_bytes())?;
     Ok(())
 }
 
@@ -50,8 +57,8 @@ fn get_file_names(directory: &str) -> io::Result<Vec<FileInfo>> {
     let entries = std::fs::read_dir(directory)?;
     let mut sorted_entries: Vec<_> = entries.collect();
     sorted_entries.sort_by(|a, b| {
-        let a_name = a.as_ref().unwrap().file_name();
-        let b_name = b.as_ref().unwrap().file_name();
+        let a_name = a.as_ref().expect("Failed to get entry").file_name();
+        let b_name = b.as_ref().expect("Failed to get entry").file_name();
         a_name.cmp(&b_name)
     });
 
@@ -188,13 +195,13 @@ fn main() -> Result<(), io::Error> {
             b'h' => {
                 let cwd = get_cwd();
                 let dirname = cwd.split('/').collect::<Vec<_>>();
-                let old_dir = dirname.last().unwrap();
+                let old_dir = dirname.last().expect("Failed to get last directory");
                 try_cd(&PathBuf::from(".."))?;
                 let files = get_file_names(".")?;
                 index = 0;
-                for i in 0..files.len() {
+                for (i, _) in files.iter().enumerate() {
                     if files[i].name == *old_dir {
-                        index = i as i32;
+                        index = i32::try_from(i).expect("Invalid index");
                         break;
                     }
                 }
@@ -217,7 +224,6 @@ fn main() -> Result<(), io::Error> {
     write!(stderr, "{}{}\x1b[?1049l", cursor::Show, clear::All)?;
     stderr.flush()?;
 
-    write!(stderr, "Current directory: {}\n", get_cwd())?;
-
+    write_to_file("/tmp/directory-switcher", get_cwd().as_str())?;
     Ok(())
 }
