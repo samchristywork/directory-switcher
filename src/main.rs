@@ -137,6 +137,17 @@ fn render_pane(
     Ok(())
 }
 
+fn file_stdout(file_name: &str) -> String {
+    let cmd = "file";
+    let output = std::process::Command::new(cmd)
+        .arg(file_name)
+        .output()
+        .expect("Failed to execute command");
+    let output_str = String::from_utf8_lossy(&output.stdout);
+    let output_str = output_str.trim();
+    output_str.to_string()
+}
+
 fn render(stderr: &mut dyn Write, index: i32) -> io::Result<()> {
     let file_names = get_file_names(".")?;
     let parent_file_names = get_file_names("..")?;
