@@ -159,6 +159,16 @@ fn render(stderr: &mut dyn Write, index: i32) -> io::Result<()> {
     };
 
     let (width, height) = terminal_size()?;
+    let pane_width = width / 3;
+
+    if file_names.is_empty() {
+        print_width(stderr, 1, 1, width, "\x1b[1;32m", get_cwd().as_str())?;
+        render_pane(stderr, 0, 2, -1, &parent_file_names, false, pane_width, height - 1)?;
+        render_pane(stderr, width / 3, 2, -1, &[], false, pane_width, height - 1)?;
+        render_pane(stderr, 2 * width / 3, 2, -1, &[], false, pane_width, height - 1)?;
+        stderr.flush()?;
+        return Ok(());
+    }
 
     let child_file_names = get_file_names(
         file_names[usize::try_from(index).expect("Invalid index")]
@@ -166,8 +176,6 @@ fn render(stderr: &mut dyn Write, index: i32) -> io::Result<()> {
             .to_str()
             .unwrap_or("."),
     );
-
-    let pane_width = width / 3;
 
     let filename = file_names
         .get(usize::try_from(index).expect("Invalid index"))
