@@ -138,14 +138,10 @@ fn render_pane(
 }
 
 fn file_stdout(file_name: &str) -> String {
-    let cmd = "file";
-    let output = std::process::Command::new(cmd)
-        .arg(file_name)
-        .output()
-        .expect("Failed to execute command");
-    let output_str = String::from_utf8_lossy(&output.stdout);
-    let output_str = output_str.trim();
-    output_str.to_string()
+    let Ok(output) = std::process::Command::new("file").arg(file_name).output() else {
+        return String::new();
+    };
+    String::from_utf8_lossy(&output.stdout).trim().to_string()
 }
 
 fn render(stderr: &mut dyn Write, index: i32) -> io::Result<()> {
