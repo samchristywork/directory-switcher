@@ -31,12 +31,9 @@ fn write_to_file(file_path: &str, content: &str) -> io::Result<()> {
     Ok(())
 }
 
-fn get_cwd() -> String {
-    let mut path = PathBuf::new();
-    if let Ok(current_dir) = std::env::current_dir() {
-        path = current_dir;
-    }
-    path.to_str().unwrap_or(".").to_string()
+fn get_cwd() -> io::Result<String> {
+    let path = std::env::current_dir()?;
+    Ok(path.to_string_lossy().into_owned())
 }
 
 fn try_cd(path: &PathBuf) -> io::Result<()> {
@@ -140,7 +137,7 @@ fn file_stdout(file_name: &str) -> String {
 }
 
 fn render(stderr: &mut dyn Write, index: i32) -> io::Result<()> {
-    let current_dir = get_cwd();
+    let current_dir = get_cwd()?;
 
     let file_names = get_file_names(".")?;
     let parent_file_names = if current_dir == "/" {
@@ -153,7 +150,7 @@ fn render(stderr: &mut dyn Write, index: i32) -> io::Result<()> {
     let pane_width = width / 3;
 
     if file_names.is_empty() {
-        print_width(stderr, 1, 1, width, "\x1b[1;32m", get_cwd().as_str())?;
+        print_width(stderr, 1, 1, width, "\x1b[1;32m", &current_dir)?;
         render_pane(stderr, 0, 2, -1, &parent_file_names, false, pane_width, height - 1)?;
         render_pane(stderr, width / 3, 2, -1, &[], false, pane_width, height - 1)?;
         render_pane(stderr, 2 * width / 3, 2, -1, &[], false, pane_width, height - 1)?;
@@ -173,7 +170,7 @@ fn render(stderr: &mut dyn Write, index: i32) -> io::Result<()> {
         .map_or("..", |f| f.name.as_str());
     print_width(stderr, 1, 2, width, "", &file_stdout(filename))?;
 
-    print_width(stderr, 1, 1, width, "\x1b[1;32m", get_cwd().as_str())?;
+    print_width(stderr, 1, 1, width, "\x1b[1;32m", &current_dir)?;
     render_pane(
         stderr,
         0,
@@ -239,7 +236,7 @@ fn main() -> Result<(), io::Error> {
                 }
             }
             b'h' => {
-                let cwd = get_cwd();
+                let cwd = get_cwd()?;
                 let dirname = cwd.split('/').collect::<Vec<_>>();
                 let old_dir = dirname.last().expect("Failed to get last directory");
                 try_cd(&PathBuf::from(".."))?;
@@ -270,6 +267,6 @@ fn main() -> Result<(), io::Error> {
     write!(stderr, "{}{}\x1b[?1049l", cursor::Show, clear::All)?;
     stderr.flush()?;
 
-    write_to_file("/tmp/directory-switcher", get_cwd().as_str())?;
+    write_to_file("/tmp/directory-switcher", &get_cwd()?)?;
     Ok(())
 }
