@@ -55,15 +55,10 @@ fn get_file_names(directory: &str) -> io::Result<Vec<FileInfo>> {
     }
 
     let entries = std::fs::read_dir(directory)?;
-    let mut sorted_entries: Vec<_> = entries.collect();
-    sorted_entries.sort_by(|a, b| {
-        let a_name = a.as_ref().expect("Failed to get entry").file_name();
-        let b_name = b.as_ref().expect("Failed to get entry").file_name();
-        a_name.cmp(&b_name)
-    });
+    let mut sorted_entries: Vec<_> = entries.flatten().collect();
+    sorted_entries.sort_by(|a, b| a.file_name().cmp(&b.file_name()));
 
     for entry in sorted_entries {
-        let entry = entry?;
         let path = entry.path();
         let file_name = entry.file_name();
 
