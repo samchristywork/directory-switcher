@@ -43,7 +43,7 @@ fn try_cd(path: &PathBuf) -> io::Result<()> {
     Ok(())
 }
 
-fn get_file_names(directory: &str) -> io::Result<Vec<FileInfo>> {
+fn get_file_names(directory: &str, show_hidden: bool) -> io::Result<Vec<FileInfo>> {
     let mut file_names = Vec::new();
 
     let dir_path = PathBuf::from(directory);
@@ -59,6 +59,14 @@ fn get_file_names(directory: &str) -> io::Result<Vec<FileInfo>> {
         let path = entry.path();
         let file_name = entry.file_name();
 
+        let Some(name) = file_name.to_str() else {
+            continue;
+        };
+
+        if !show_hidden && name.starts_with('.') {
+            continue;
+        }
+
         let file_type = entry.file_type()?;
         let color = if file_type.is_symlink() {
             "\x1b[1;36m"
@@ -68,13 +76,11 @@ fn get_file_names(directory: &str) -> io::Result<Vec<FileInfo>> {
             "\x1b[1;37m"
         };
 
-        if let Some(name) = file_name.to_str() {
-            file_names.push(FileInfo {
-                name: name.to_string(),
-                color: color.to_string(),
-                path: path.clone(),
-            });
-        }
+        file_names.push(FileInfo {
+            name: name.to_string(),
+            color: color.to_string(),
+            path: path.clone(),
+        });
     }
     Ok(file_names)
 }
@@ -136,14 +142,14 @@ fn file_stdout(file_name: &str) -> String {
     String::from_utf8_lossy(&output.stdout).trim().to_string()
 }
 
-fn render(stderr: &mut dyn Write, index: i32) -> io::Result<()> {
+fn render(stderr: &mut dyn Write, index: i32, show_hidden: bool) -> io::Result<()> {
     let current_dir = get_cwd()?;
 
-    let file_names = get_file_names(".")?;
+    let file_names = get_file_names(".", show_hidden)?;
     let parent_file_names = if current_dir == "/" {
         vec![]
     } else {
-        get_file_names("..")?
+        get_file_names("..", show_hidden)?
     };
 
     let (width, height) = terminal_size()?;
@@ -163,6 +169,7 @@ fn render(stderr: &mut dyn Write, index: i32) -> io::Result<()> {
             .path
             .to_str()
             .unwrap_or("."),
+        show_hidden,
     );
 
     let filename = file_names
@@ -209,6 +216,7 @@ fn render(stderr: &mut dyn Write, index: i32) -> io::Result<()> {
 fn main() -> Result<(), io::Error> {
     let mut stderr = io::stderr().into_raw_mode()?;
     let mut index = 0;
+    let mut show_hidden = false;
     write!(
         stderr,
         "\x1b[?1049h{}{}{}",
@@ -217,10 +225,10 @@ fn main() -> Result<(), io::Error> {
         cursor::Goto(1, 1)
     )?;
 
-    render(&mut stderr, index)?;
+    render(&mut stderr, index, show_hidden)?;
 
     for byte in io::stdin().bytes() {
-        let current_dir_files = get_file_names(".")?;
+        let current_dir_files = get_file_names(".", show_hidden)?;
         match byte? {
             b'q' => break,
             b'j' => index += 1,
@@ -239,7 +247,7 @@ fn main() -> Result<(), io::Error> {
                 let dirname = cwd.split('/').collect::<Vec<_>>();
                 let old_dir = dirname.last().expect("Failed to get last directory");
                 try_cd(&PathBuf::from(".."))?;
-                let files = get_file_names(".")?;
+                let files = get_file_names(".", show_hidden)?;
                 index = 0;
                 for (i, _) in files.iter().enumerate() {
                     if files[i].name == *old_dir {
@@ -248,6 +256,10 @@ fn main() -> Result<(), io::Error> {
                     }
                 }
             }
+            b'.' => {
+                show_hidden = !show_hidden;
+                index = 0;
+            }
             _ => {}
         }
 
@@ -255,12 +267,12 @@ fn main() -> Result<(), io::Error> {
             index = 0;
         }
 
-        let current_dir_files = get_file_names(".")?;
+        let current_dir_files = get_file_names(".", show_hidden)?;
         if index >= i32::try_from(current_dir_files.len()).expect("Invalid index") {
             index = i32::try_from(current_dir_files.len()).expect("Invalid index") - 1;
         }
 
-        render(&mut stderr, index)?;
+        render(&mut stderr, index, show_hidden)?;
     }
 
     write!(stderr, "{}{}\x1b[?1049l", cursor::Show, clear::All)?;
