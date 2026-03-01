@@ -67,11 +67,11 @@ fn get_file_names(directory: &str) -> io::Result<Vec<FileInfo>> {
         let path = entry.path();
         let file_name = entry.file_name();
 
-        let metadata = entry.metadata()?;
-        let color = if metadata.is_dir() {
-            "\x1b[1;34m"
-        } else if metadata.file_type().is_symlink() {
+        let file_type = entry.file_type()?;
+        let color = if file_type.is_symlink() {
             "\x1b[1;36m"
+        } else if file_type.is_dir() {
+            "\x1b[1;34m"
         } else {
             "\x1b[1;37m"
         };
