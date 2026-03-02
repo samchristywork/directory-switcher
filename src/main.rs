@@ -168,6 +168,17 @@ fn render(stderr: &mut dyn Write, index: i32, show_hidden: bool, filter: &str, f
         get_file_names("..", show_hidden)?
     };
 
+    let parent_index = std::path::Path::new(&current_dir)
+        .file_name()
+        .and_then(|n| n.to_str())
+        .and_then(|name| {
+            parent_file_names
+                .iter()
+                .position(|f| f.name == name)
+                .and_then(|i| i32::try_from(i).ok())
+        })
+        .unwrap_or(-1);
+
     let (width, height) = terminal_size()?;
     let pane_width = width / 3;
 
@@ -182,7 +193,7 @@ fn render(stderr: &mut dyn Write, index: i32, show_hidden: bool, filter: &str, f
     if file_names.is_empty() {
         print_width(stderr, 1, 1, width, "\x1b[1;32m", &current_dir)?;
         print_width(stderr, 1, 2, width, "\x1b[1;33m", &status_line)?;
-        render_pane(stderr, 0, 2, -1, &parent_file_names, false, pane_width, height - 1)?;
+        render_pane(stderr, 0, 2, parent_index, &parent_file_names, false, pane_width, height - 1)?;
         render_pane(stderr, width / 3, 2, -1, &[], false, pane_width, height - 1)?;
         render_pane(stderr, 2 * width / 3, 2, -1, &[], false, pane_width, height - 1)?;
         stderr.flush()?;
@@ -215,7 +226,7 @@ fn render(stderr: &mut dyn Write, index: i32, show_hidden: bool, filter: &str, f
         stderr,
         0,
         2,
-        -1,
+        parent_index,
         &parent_file_names,
         false,
         pane_width,
