@@ -256,7 +256,7 @@ fn file_stdout(file_name: &str) -> String {
     String::from_utf8_lossy(&output.stdout).trim().to_string()
 }
 
-fn render(stderr: &mut dyn Write, index: i32, show_hidden: bool, filter: &str, filter_mode: bool, sort_mode: SortMode) -> io::Result<()> {
+fn render(stderr: &mut dyn Write, index: i32, show_hidden: bool, filter: &str, filter_mode: bool, sort_mode: SortMode, scroll_offset: i32) -> io::Result<()> {
     let current_dir = get_cwd()?;
 
     let mut file_names = get_file_names(".", show_hidden, sort_mode)?;
@@ -299,15 +299,29 @@ fn render(stderr: &mut dyn Write, index: i32, show_hidden: bool, filter: &str, f
         format!("{current_dir}  [{}]", sort_mode.label())
     };
 
+    let pane_height = (height as i32).saturating_sub(2);
+
+    let par_scroll = if parent_index > 0 {
+        ((parent_index - pane_height / 2).max(0)) as usize
+    } else {
+        0
+    };
+    let par_files = &parent_file_names[par_scroll.min(parent_file_names.len())..];
+    let par_visible_index = parent_index - par_scroll as i32;
+
     if file_names.is_empty() {
         print_width(stderr, 1, 1, width, "\x1b[1;32m", &header)?;
         print_width(stderr, 1, 2, width, "\x1b[1;33m", &status_line)?;
-        render_pane(stderr, 0, 2, parent_index, &parent_file_names, false, pane_width, height - 1)?;
+        render_pane(stderr, 0, 2, par_visible_index, par_files, false, pane_width, height - 1)?;
         render_pane(stderr, width / 3, 2, -1, &[], false, pane_width, height - 1)?;
         render_pane(stderr, 2 * width / 3, 2, -1, &[], false, pane_width, height - 1)?;
         stderr.flush()?;
         return Ok(());
     }
+
+    let mid_scroll = scroll_offset.max(0) as usize;
+    let mid_files = &file_names[mid_scroll.min(file_names.len())..];
+    let mid_visible_index = index - scroll_offset;
 
     let selected = &file_names[usize::try_from(index).expect("Invalid index")];
     let is_dir = selected.path.is_dir();
@@ -336,26 +350,8 @@ fn render(stderr: &mut dyn Write, index: i32, show_hidden: bool, filter: &str, f
     }
 
     print_width(stderr, 1, 1, width, "\x1b[1;32m", &header)?;
-    render_pane(
-        stderr,
-        0,
-        2,
-        parent_index,
-        &parent_file_names,
-        false,
-        pane_width,
-        height - 1,
-    )?;
-    render_pane(
-        stderr,
-        width / 3,
-        2,
-        index,
-        &file_names,
-        false,
-        pane_width,
-        height - 1,
-    )?;
+    render_pane(stderr, 0, 2, par_visible_index, par_files, false, pane_width, height - 1)?;
+    render_pane(stderr, width / 3, 2, mid_visible_index, mid_files, false, pane_width, height - 1)?;
 
     match child_file_names {
         Some(Ok(ref entries)) => {
@@ -380,6 +376,7 @@ fn render(stderr: &mut dyn Write, index: i32, show_hidden: bool, filter: &str, f
 fn main() -> Result<(), io::Error> {
     let mut stderr = io::stderr().into_raw_mode()?;
     let mut index = 0;
+    let mut scroll_offset: i32 = 0;
     let mut show_hidden = false;
     let mut filter = String::new();
     let mut filter_mode = false;
@@ -392,7 +389,7 @@ fn main() -> Result<(), io::Error> {
         cursor::Goto(1, 1)
     )?;
 
-    render(&mut stderr, index, show_hidden, &filter, filter_mode, sort_mode)?;
+    render(&mut stderr, index, show_hidden, &filter, filter_mode, sort_mode, scroll_offset)?;
 
     for byte in io::stdin().bytes() {
         let filtered_files = {
@@ -415,6 +412,7 @@ fn main() -> Result<(), io::Error> {
                 }
                 filter.clear();
                 index = 0;
+                scroll_offset = 0;
             }
             b'h' if !filter_mode => {
                 let cwd = get_cwd()?;
@@ -422,6 +420,7 @@ fn main() -> Result<(), io::Error> {
                 let old_dir = dirname.last().expect("Failed to get last directory");
                 try_cd(&PathBuf::from(".."))?;
                 filter.clear();
+                scroll_offset = 0;
                 let files = get_file_names(".", show_hidden, sort_mode)?;
                 index = 0;
                 for (i, _) in files.iter().enumerate() {
@@ -434,10 +433,12 @@ fn main() -> Result<(), io::Error> {
             b'.' if !filter_mode => {
                 show_hidden = !show_hidden;
                 index = 0;
+                scroll_offset = 0;
             }
             b's' if !filter_mode => {
                 sort_mode = sort_mode.cycle();
                 index = 0;
+                scroll_offset = 0;
             }
             b'o' if !filter_mode => {
                 let idx = usize::try_from(index.max(0)).expect("Invalid index");
@@ -457,11 +458,13 @@ fn main() -> Result<(), io::Error> {
                 filter_mode = true;
                 filter.clear();
                 index = 0;
+                scroll_offset = 0;
             }
             0x1b if filter_mode => {
                 filter_mode = false;
                 filter.clear();
                 index = 0;
+                scroll_offset = 0;
             }
             0x0d if filter_mode => {
                 filter_mode = false;
@@ -469,10 +472,12 @@ fn main() -> Result<(), io::Error> {
             0x7f if filter_mode => {
                 filter.pop();
                 index = 0;
+                scroll_offset = 0;
             }
             b if filter_mode && (0x20..=0x7e).contains(&b) => {
                 filter.push(b as char);
                 index = 0;
+                scroll_offset = 0;
             }
             _ => {}
         }
@@ -493,7 +498,17 @@ fn main() -> Result<(), io::Error> {
             index = i32::try_from(filtered_files.len()).expect("Invalid index") - 1;
         }
 
-        render(&mut stderr, index, show_hidden, &filter, filter_mode, sort_mode)?;
+        let (_, term_height) = terminal_size()?;
+        let pane_height = term_height.saturating_sub(2) as i32;
+        if index < scroll_offset {
+            scroll_offset = index;
+        }
+        if index >= scroll_offset + pane_height {
+            scroll_offset = index - pane_height + 1;
+        }
+        scroll_offset = scroll_offset.max(0);
+
+        render(&mut stderr, index, show_hidden, &filter, filter_mode, sort_mode, scroll_offset)?;
     }
 
     write!(stderr, "{}{}\x1b[?1049l", cursor::Show, clear::All)?;
