@@ -1,7 +1,33 @@
+use std::cmp::Reverse;
 use std::io::{self, BufRead, Read, Write};
 use std::os::unix::fs::MetadataExt;
 use std::path::PathBuf;
 use termion::{clear, cursor, raw::IntoRawMode, terminal_size};
+
+#[derive(Clone, Copy, PartialEq)]
+enum SortMode {
+    Name,
+    Size,
+    Mtime,
+}
+
+impl SortMode {
+    fn cycle(self) -> Self {
+        match self {
+            Self::Name  => Self::Size,
+            Self::Size  => Self::Mtime,
+            Self::Mtime => Self::Name,
+        }
+    }
+
+    fn label(self) -> &'static str {
+        match self {
+            Self::Name  => "name",
+            Self::Size  => "size",
+            Self::Mtime => "mtime",
+        }
+    }
+}
 
 struct FileInfo {
     name: String,
@@ -44,7 +70,7 @@ fn try_cd(path: &PathBuf) -> io::Result<()> {
     Ok(())
 }
 
-fn get_file_names(directory: &str, show_hidden: bool) -> io::Result<Vec<FileInfo>> {
+fn get_file_names(directory: &str, show_hidden: bool, sort_mode: SortMode) -> io::Result<Vec<FileInfo>> {
     let mut file_names = Vec::new();
 
     let dir_path = PathBuf::from(directory);
@@ -54,7 +80,11 @@ fn get_file_names(directory: &str, show_hidden: bool) -> io::Result<Vec<FileInfo
 
     let entries = std::fs::read_dir(directory)?;
     let mut sorted_entries: Vec<_> = entries.flatten().collect();
-    sorted_entries.sort_by(|a, b| a.file_name().cmp(&b.file_name()));
+    match sort_mode {
+        SortMode::Name  => sorted_entries.sort_by(|a, b| a.file_name().cmp(&b.file_name())),
+        SortMode::Size  => sorted_entries.sort_by_key(|e| Reverse(e.metadata().map(|m| m.len()).unwrap_or(0))),
+        SortMode::Mtime => sorted_entries.sort_by_key(|e| Reverse(e.metadata().map(|m| m.mtime()).unwrap_or(0))),
+    }
 
     for entry in sorted_entries {
         let path = entry.path();
@@ -226,10 +256,10 @@ fn file_stdout(file_name: &str) -> String {
     String::from_utf8_lossy(&output.stdout).trim().to_string()
 }
 
-fn render(stderr: &mut dyn Write, index: i32, show_hidden: bool, filter: &str, filter_mode: bool) -> io::Result<()> {
+fn render(stderr: &mut dyn Write, index: i32, show_hidden: bool, filter: &str, filter_mode: bool, sort_mode: SortMode) -> io::Result<()> {
     let current_dir = get_cwd()?;
 
-    let mut file_names = get_file_names(".", show_hidden)?;
+    let mut file_names = get_file_names(".", show_hidden, sort_mode)?;
     if !filter.is_empty() {
         let fl = filter.to_lowercase();
         file_names.retain(|f| f.name.to_lowercase().contains(&fl));
@@ -238,7 +268,7 @@ fn render(stderr: &mut dyn Write, index: i32, show_hidden: bool, filter: &str, f
     let parent_file_names = if current_dir == "/" {
         vec![]
     } else {
-        get_file_names("..", show_hidden)?
+        get_file_names("..", show_hidden, sort_mode)?
     };
 
     let parent_index = std::path::Path::new(&current_dir)
@@ -263,8 +293,14 @@ fn render(stderr: &mut dyn Write, index: i32, show_hidden: bool, filter: &str, f
         String::new()
     };
 
+    let header = if sort_mode == SortMode::Name {
+        current_dir.clone()
+    } else {
+        format!("{current_dir}  [{}]", sort_mode.label())
+    };
+
     if file_names.is_empty() {
-        print_width(stderr, 1, 1, width, "\x1b[1;32m", &current_dir)?;
+        print_width(stderr, 1, 1, width, "\x1b[1;32m", &header)?;
         print_width(stderr, 1, 2, width, "\x1b[1;33m", &status_line)?;
         render_pane(stderr, 0, 2, parent_index, &parent_file_names, false, pane_width, height - 1)?;
         render_pane(stderr, width / 3, 2, -1, &[], false, pane_width, height - 1)?;
@@ -280,6 +316,7 @@ fn render(stderr: &mut dyn Write, index: i32, show_hidden: bool, filter: &str, f
         Some(get_file_names(
             selected.path.to_str().unwrap_or("."),
             show_hidden,
+            sort_mode,
         ))
     } else {
         None
@@ -298,7 +335,7 @@ fn render(stderr: &mut dyn Write, index: i32, show_hidden: bool, filter: &str, f
         print_width(stderr, 1, 2, width, "", &info)?;
     }
 
-    print_width(stderr, 1, 1, width, "\x1b[1;32m", &current_dir)?;
+    print_width(stderr, 1, 1, width, "\x1b[1;32m", &header)?;
     render_pane(
         stderr,
         0,
@@ -346,6 +383,7 @@ fn main() -> Result<(), io::Error> {
     let mut show_hidden = false;
     let mut filter = String::new();
     let mut filter_mode = false;
+    let mut sort_mode = SortMode::Name;
     write!(
         stderr,
         "\x1b[?1049h{}{}{}",
@@ -354,11 +392,11 @@ fn main() -> Result<(), io::Error> {
         cursor::Goto(1, 1)
     )?;
 
-    render(&mut stderr, index, show_hidden, &filter, filter_mode)?;
+    render(&mut stderr, index, show_hidden, &filter, filter_mode, sort_mode)?;
 
     for byte in io::stdin().bytes() {
         let filtered_files = {
-            let mut files = get_file_names(".", show_hidden)?;
+            let mut files = get_file_names(".", show_hidden, sort_mode)?;
             if !filter.is_empty() {
                 let fl = filter.to_lowercase();
                 files.retain(|f| f.name.to_lowercase().contains(&fl));
@@ -384,7 +422,7 @@ fn main() -> Result<(), io::Error> {
                 let old_dir = dirname.last().expect("Failed to get last directory");
                 try_cd(&PathBuf::from(".."))?;
                 filter.clear();
-                let files = get_file_names(".", show_hidden)?;
+                let files = get_file_names(".", show_hidden, sort_mode)?;
                 index = 0;
                 for (i, _) in files.iter().enumerate() {
                     if files[i].name == *old_dir {
@@ -395,6 +433,10 @@ fn main() -> Result<(), io::Error> {
             }
             b'.' if !filter_mode => {
                 show_hidden = !show_hidden;
+                index = 0;
+            }
+            b's' if !filter_mode => {
+                sort_mode = sort_mode.cycle();
                 index = 0;
             }
             b'/' if !filter_mode => {
@@ -426,7 +468,7 @@ fn main() -> Result<(), io::Error> {
         }
 
         let filtered_files = {
-            let mut files = get_file_names(".", show_hidden)?;
+            let mut files = get_file_names(".", show_hidden, sort_mode)?;
             if !filter.is_empty() {
                 let fl = filter.to_lowercase();
                 files.retain(|f| f.name.to_lowercase().contains(&fl));
@@ -437,7 +479,7 @@ fn main() -> Result<(), io::Error> {
             index = i32::try_from(filtered_files.len()).expect("Invalid index") - 1;
         }
 
-        render(&mut stderr, index, show_hidden, &filter, filter_mode)?;
+        render(&mut stderr, index, show_hidden, &filter, filter_mode, sort_mode)?;
     }
 
     write!(stderr, "{}{}\x1b[?1049l", cursor::Show, clear::All)?;
