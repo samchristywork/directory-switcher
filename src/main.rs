@@ -153,10 +153,15 @@ fn file_stdout(file_name: &str) -> String {
     String::from_utf8_lossy(&output.stdout).trim().to_string()
 }
 
-fn render(stderr: &mut dyn Write, index: i32, show_hidden: bool) -> io::Result<()> {
+fn render(stderr: &mut dyn Write, index: i32, show_hidden: bool, filter: &str, filter_mode: bool) -> io::Result<()> {
     let current_dir = get_cwd()?;
 
-    let file_names = get_file_names(".", show_hidden)?;
+    let mut file_names = get_file_names(".", show_hidden)?;
+    if !filter.is_empty() {
+        let fl = filter.to_lowercase();
+        file_names.retain(|f| f.name.to_lowercase().contains(&fl));
+    }
+
     let parent_file_names = if current_dir == "/" {
         vec![]
     } else {
@@ -166,8 +171,17 @@ fn render(stderr: &mut dyn Write, index: i32, show_hidden: bool) -> io::Result<(
     let (width, height) = terminal_size()?;
     let pane_width = width / 3;
 
+    let status_line = if filter_mode {
+        format!("/{filter}_")
+    } else if !filter.is_empty() {
+        format!("/{filter}")
+    } else {
+        String::new()
+    };
+
     if file_names.is_empty() {
         print_width(stderr, 1, 1, width, "\x1b[1;32m", &current_dir)?;
+        print_width(stderr, 1, 2, width, "\x1b[1;33m", &status_line)?;
         render_pane(stderr, 0, 2, -1, &parent_file_names, false, pane_width, height - 1)?;
         render_pane(stderr, width / 3, 2, -1, &[], false, pane_width, height - 1)?;
         render_pane(stderr, 2 * width / 3, 2, -1, &[], false, pane_width, height - 1)?;
@@ -187,10 +201,14 @@ fn render(stderr: &mut dyn Write, index: i32, show_hidden: bool) -> io::Result<(
         None
     };
 
-    let filename = file_names
-        .get(usize::try_from(index).expect("Invalid index"))
-        .map_or("..", |f| f.name.as_str());
-    print_width(stderr, 1, 2, width, "", &file_stdout(filename))?;
+    if !status_line.is_empty() {
+        print_width(stderr, 1, 2, width, "\x1b[1;33m", &status_line)?;
+    } else {
+        let filename = file_names
+            .get(usize::try_from(index).expect("Invalid index"))
+            .map_or("..", |f| f.name.as_str());
+        print_width(stderr, 1, 2, width, "", &file_stdout(filename))?;
+    }
 
     print_width(stderr, 1, 1, width, "\x1b[1;32m", &current_dir)?;
     render_pane(
@@ -238,6 +256,8 @@ fn main() -> Result<(), io::Error> {
     let mut stderr = io::stderr().into_raw_mode()?;
     let mut index = 0;
     let mut show_hidden = false;
+    let mut filter = String::new();
+    let mut filter_mode = false;
     write!(
         stderr,
         "\x1b[?1049h{}{}{}",
@@ -246,28 +266,36 @@ fn main() -> Result<(), io::Error> {
         cursor::Goto(1, 1)
     )?;
 
-    render(&mut stderr, index, show_hidden)?;
+    render(&mut stderr, index, show_hidden, &filter, filter_mode)?;
 
     for byte in io::stdin().bytes() {
-        let current_dir_files = get_file_names(".", show_hidden)?;
+        let filtered_files = {
+            let mut files = get_file_names(".", show_hidden)?;
+            if !filter.is_empty() {
+                let fl = filter.to_lowercase();
+                files.retain(|f| f.name.to_lowercase().contains(&fl));
+            }
+            files
+        };
         match byte? {
-            b'q' => break,
-            b'j' => index += 1,
-            b'k' => index -= 1,
-            b'l' => {
-                if index >= 0 && index < current_dir_files.len().try_into().expect("Invalid index")
-                {
+            b'q' if !filter_mode => break,
+            b'j' if !filter_mode => index += 1,
+            b'k' if !filter_mode => index -= 1,
+            b'l' if !filter_mode => {
+                if index >= 0 && index < filtered_files.len().try_into().expect("Invalid index") {
                     try_cd(
-                        &current_dir_files[usize::try_from(index).expect("Invalid index")].path,
+                        &filtered_files[usize::try_from(index).expect("Invalid index")].path,
                     )?;
                 }
+                filter.clear();
                 index = 0;
             }
-            b'h' => {
+            b'h' if !filter_mode => {
                 let cwd = get_cwd()?;
                 let dirname = cwd.split('/').collect::<Vec<_>>();
                 let old_dir = dirname.last().expect("Failed to get last directory");
                 try_cd(&PathBuf::from(".."))?;
+                filter.clear();
                 let files = get_file_names(".", show_hidden)?;
                 index = 0;
                 for (i, _) in files.iter().enumerate() {
@@ -277,8 +305,29 @@ fn main() -> Result<(), io::Error> {
                     }
                 }
             }
-            b'.' => {
+            b'.' if !filter_mode => {
                 show_hidden = !show_hidden;
+                index = 0;
+            }
+            b'/' if !filter_mode => {
+                filter_mode = true;
+                filter.clear();
+                index = 0;
+            }
+            0x1b if filter_mode => {
+                filter_mode = false;
+                filter.clear();
+                index = 0;
+            }
+            0x0d if filter_mode => {
+                filter_mode = false;
+            }
+            0x7f if filter_mode => {
+                filter.pop();
+                index = 0;
+            }
+            b if filter_mode && (0x20..=0x7e).contains(&b) => {
+                filter.push(b as char);
                 index = 0;
             }
             _ => {}
@@ -288,12 +337,19 @@ fn main() -> Result<(), io::Error> {
             index = 0;
         }
 
-        let current_dir_files = get_file_names(".", show_hidden)?;
-        if index >= i32::try_from(current_dir_files.len()).expect("Invalid index") {
-            index = i32::try_from(current_dir_files.len()).expect("Invalid index") - 1;
+        let filtered_files = {
+            let mut files = get_file_names(".", show_hidden)?;
+            if !filter.is_empty() {
+                let fl = filter.to_lowercase();
+                files.retain(|f| f.name.to_lowercase().contains(&fl));
+            }
+            files
+        };
+        if index >= i32::try_from(filtered_files.len()).expect("Invalid index") {
+            index = i32::try_from(filtered_files.len()).expect("Invalid index") - 1;
         }
 
-        render(&mut stderr, index, show_hidden)?;
+        render(&mut stderr, index, show_hidden, &filter, filter_mode)?;
     }
 
     write!(stderr, "{}{}\x1b[?1049l", cursor::Show, clear::All)?;
