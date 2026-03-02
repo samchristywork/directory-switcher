@@ -293,10 +293,16 @@ fn render(stderr: &mut dyn Write, index: i32, show_hidden: bool, filter: &str, f
         String::new()
     };
 
-    let header = if sort_mode == SortMode::Name {
-        current_dir.clone()
+    let total = file_names.len();
+    let count_str = if total == 0 {
+        String::from("0/0")
     } else {
-        format!("{current_dir}  [{}]", sort_mode.label())
+        format!("{}/{}", index + 1, total)
+    };
+    let header = if sort_mode == SortMode::Name {
+        format!("{current_dir}  {count_str}")
+    } else {
+        format!("{current_dir}  [{}]  {count_str}", sort_mode.label())
     };
 
     let pane_height = (height as i32).saturating_sub(2);
