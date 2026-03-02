@@ -439,6 +439,20 @@ fn main() -> Result<(), io::Error> {
                 sort_mode = sort_mode.cycle();
                 index = 0;
             }
+            b'o' if !filter_mode => {
+                let idx = usize::try_from(index.max(0)).expect("Invalid index");
+                if idx < filtered_files.len() && !filtered_files[idx].path.is_dir() {
+                    let path = filtered_files[idx].path.clone();
+                    write!(stderr, "\x1b[?1049l")?;
+                    stderr.flush()?;
+                    drop(stderr);
+                    let editor = std::env::var("EDITOR")
+                        .unwrap_or_else(|_| String::from("xdg-open"));
+                    let _ = std::process::Command::new(&editor).arg(&path).status();
+                    stderr = io::stderr().into_raw_mode()?;
+                    write!(stderr, "\x1b[?1049h{}{}{}", clear::All, cursor::Hide, cursor::Goto(1, 1))?;
+                }
+            }
             b'/' if !filter_mode => {
                 filter_mode = true;
                 filter.clear();
