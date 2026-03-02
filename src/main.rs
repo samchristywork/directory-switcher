@@ -1,4 +1,4 @@
-use std::io::{self, Read, Write};
+use std::io::{self, BufRead, Read, Write};
 use std::path::PathBuf;
 use termion::{clear, cursor, raw::IntoRawMode, terminal_size};
 
@@ -135,6 +135,17 @@ fn render_pane(
     Ok(())
 }
 
+fn read_file_preview(path: &PathBuf, max_lines: usize) -> Vec<String> {
+    let Ok(file) = std::fs::File::open(path) else {
+        return vec![];
+    };
+    io::BufReader::new(file)
+        .lines()
+        .take(max_lines)
+        .filter_map(|l| l.ok())
+        .collect()
+}
+
 fn file_stdout(file_name: &str) -> String {
     let Ok(output) = std::process::Command::new("file").arg(file_name).output() else {
         return String::new();
@@ -164,13 +175,17 @@ fn render(stderr: &mut dyn Write, index: i32, show_hidden: bool) -> io::Result<(
         return Ok(());
     }
 
-    let child_file_names = get_file_names(
-        file_names[usize::try_from(index).expect("Invalid index")]
-            .path
-            .to_str()
-            .unwrap_or("."),
-        show_hidden,
-    );
+    let selected = &file_names[usize::try_from(index).expect("Invalid index")];
+    let is_dir = selected.path.is_dir();
+
+    let child_file_names = if is_dir {
+        Some(get_file_names(
+            selected.path.to_str().unwrap_or("."),
+            show_hidden,
+        ))
+    } else {
+        None
+    };
 
     let filename = file_names
         .get(usize::try_from(index).expect("Invalid index"))
@@ -198,16 +213,22 @@ fn render(stderr: &mut dyn Write, index: i32, show_hidden: bool) -> io::Result<(
         pane_width,
         height - 1,
     )?;
-    render_pane(
-        stderr,
-        2 * width / 3,
-        2,
-        -1,
-        child_file_names.as_ref().unwrap_or(&vec![]),
-        child_file_names.is_err(),
-        pane_width,
-        height - 1,
-    )?;
+
+    match child_file_names {
+        Some(Ok(ref entries)) => {
+            render_pane(stderr, 2 * width / 3, 2, -1, entries, false, pane_width, height - 1)?;
+        }
+        Some(Err(_)) => {
+            render_pane(stderr, 2 * width / 3, 2, -1, &[], true, pane_width, height - 1)?;
+        }
+        None => {
+            let preview = read_file_preview(&selected.path, (height - 1) as usize);
+            for i in 0..(height - 1) {
+                let content = preview.get(i as usize).map(|s| s.as_str()).unwrap_or("");
+                print_width(stderr, 2 * width / 3 + 1, i + 3, pane_width, "\x1b[0m", content)?;
+            }
+        }
+    }
 
     stderr.flush()?;
     Ok(())
