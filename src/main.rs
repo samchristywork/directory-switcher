@@ -1,4 +1,5 @@
 use std::io::{self, BufRead, Read, Write};
+use std::os::unix::fs::MetadataExt;
 use std::path::PathBuf;
 use termion::{clear, cursor, raw::IntoRawMode, terminal_size};
 
@@ -146,6 +147,78 @@ fn read_file_preview(path: &PathBuf, max_lines: usize) -> Vec<String> {
         .collect()
 }
 
+fn format_permissions(mode: u32) -> String {
+    let ft = match mode & 0o170000 {
+        0o040000 => 'd',
+        0o120000 => 'l',
+        _ => '-',
+    };
+    let bits = [
+        (0o400, 'r'), (0o200, 'w'), (0o100, 'x'),
+        (0o040, 'r'), (0o020, 'w'), (0o010, 'x'),
+        (0o004, 'r'), (0o002, 'w'), (0o001, 'x'),
+    ];
+    let mut s = String::with_capacity(10);
+    s.push(ft);
+    for (bit, ch) in bits {
+        s.push(if mode & bit != 0 { ch } else { '-' });
+    }
+    s
+}
+
+fn format_size(bytes: u64) -> String {
+    const K: u64 = 1024;
+    const M: u64 = K * 1024;
+    const G: u64 = M * 1024;
+    if bytes >= G {
+        format!("{:.1}G", bytes as f64 / G as f64)
+    } else if bytes >= M {
+        format!("{:.1}M", bytes as f64 / M as f64)
+    } else if bytes >= K {
+        format!("{:.1}K", bytes as f64 / K as f64)
+    } else {
+        format!("{bytes}B")
+    }
+}
+
+fn epoch_days_to_date(mut d: u64) -> (u64, u64, u64) {
+    let n400 = d / 146097; d %= 146097;
+    let n100 = (d / 36524).min(3); d -= n100 * 36524;
+    let n4   = d / 1461;   d %= 1461;
+    let n1   = (d / 365).min(3); d -= n1 * 365;
+    let year = n400 * 400 + n100 * 100 + n4 * 4 + n1 + 1970;
+    let leap = (year % 4 == 0 && year % 100 != 0) || year % 400 == 0;
+    let mdays: [u64; 12] = [31, if leap { 29 } else { 28 }, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
+    let mut month = 1u64;
+    for md in mdays {
+        if d < md { break; }
+        d -= md;
+        month += 1;
+    }
+    (year, month, d + 1)
+}
+
+fn format_mtime(secs: i64) -> String {
+    if secs < 0 { return String::from("?"); }
+    let secs = secs as u64;
+    let mins  = secs / 60;
+    let hours = mins / 60;
+    let (y, mo, d) = epoch_days_to_date(hours / 24);
+    format!("{y}-{mo:02}-{d:02} {:02}:{:02}", hours % 24, mins % 60)
+}
+
+fn file_metadata_str(path: &PathBuf) -> String {
+    let Ok(meta) = std::fs::symlink_metadata(path) else {
+        return String::new();
+    };
+    format!(
+        "{}  {}  {}",
+        format_permissions(meta.mode()),
+        format_size(meta.len()),
+        format_mtime(meta.mtime()),
+    )
+}
+
 fn file_stdout(file_name: &str) -> String {
     let Ok(output) = std::process::Command::new("file").arg(file_name).output() else {
         return String::new();
@@ -215,10 +288,14 @@ fn render(stderr: &mut dyn Write, index: i32, show_hidden: bool, filter: &str, f
     if !status_line.is_empty() {
         print_width(stderr, 1, 2, width, "\x1b[1;33m", &status_line)?;
     } else {
-        let filename = file_names
-            .get(usize::try_from(index).expect("Invalid index"))
-            .map_or("..", |f| f.name.as_str());
-        print_width(stderr, 1, 2, width, "", &file_stdout(filename))?;
+        let meta = file_metadata_str(&selected.path);
+        let fout = file_stdout(&selected.name);
+        let info = match (meta.is_empty(), fout.is_empty()) {
+            (false, false) => format!("{meta}   {fout}"),
+            (false, true)  => meta,
+            _              => fout,
+        };
+        print_width(stderr, 1, 2, width, "", &info)?;
     }
 
     print_width(stderr, 1, 1, width, "\x1b[1;32m", &current_dir)?;
