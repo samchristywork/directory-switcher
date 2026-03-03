@@ -255,7 +255,7 @@ fn file_stdout(file_name: &str) -> String {
     String::from_utf8_lossy(&output.stdout).trim().to_string()
 }
 
-fn render(stderr: &mut dyn Write, index: i32, show_hidden: bool, filter: &str, filter_mode: bool, sort_mode: SortMode, scroll_offset: i32) -> io::Result<()> {
+fn render(stderr: &mut dyn Write, index: i32, show_hidden: bool, filter: &str, filter_mode: bool, sort_mode: SortMode, scroll_offset: i32, file_info: &str) -> io::Result<()> {
     let current_dir = get_cwd()?;
 
     let mut file_names = get_file_names(".", show_hidden, sort_mode)?;
@@ -345,11 +345,10 @@ fn render(stderr: &mut dyn Write, index: i32, show_hidden: bool, filter: &str, f
         print_width(stderr, 1, 2, width, "\x1b[1;33m", &status_line)?;
     } else {
         let meta = file_metadata_str(&selected.path);
-        let fout = file_stdout(&selected.name);
-        let info = match (meta.is_empty(), fout.is_empty()) {
-            (false, false) => format!("{meta}   {fout}"),
+        let info = match (meta.is_empty(), file_info.is_empty()) {
+            (false, false) => format!("{meta}   {file_info}"),
             (false, true)  => meta,
-            _              => fout,
+            _              => file_info.to_string(),
         };
         print_width(stderr, 1, 2, width, "", &info)?;
     }
@@ -386,6 +385,7 @@ fn main() -> Result<(), io::Error> {
     let mut filter = String::new();
     let mut filter_mode = false;
     let mut sort_mode = SortMode::Name;
+    let mut file_info_cache: (PathBuf, String) = (PathBuf::new(), String::new());
     write!(
         stderr,
         "\x1b[?1049h{}{}{}",
@@ -394,7 +394,7 @@ fn main() -> Result<(), io::Error> {
         cursor::Goto(1, 1)
     )?;
 
-    render(&mut stderr, index, show_hidden, &filter, filter_mode, sort_mode, scroll_offset)?;
+    render(&mut stderr, index, show_hidden, &filter, filter_mode, sort_mode, scroll_offset, "")?;
 
     for byte in io::stdin().bytes() {
         let filtered_files = {
@@ -524,7 +524,19 @@ fn main() -> Result<(), io::Error> {
         }
         scroll_offset = scroll_offset.max(0);
 
-        render(&mut stderr, index, show_hidden, &filter, filter_mode, sort_mode, scroll_offset)?;
+        let selected_path = filtered_files
+            .get(usize::try_from(index.max(0)).expect("Invalid index"))
+            .map(|f| f.path.clone())
+            .unwrap_or_default();
+        if selected_path != file_info_cache.0 {
+            let name = filtered_files
+                .get(usize::try_from(index.max(0)).expect("Invalid index"))
+                .map(|f| f.name.as_str())
+                .unwrap_or("");
+            file_info_cache = (selected_path, file_stdout(name));
+        }
+
+        render(&mut stderr, index, show_hidden, &filter, filter_mode, sort_mode, scroll_offset, &file_info_cache.1)?;
     }
 
     write!(stderr, "{}{}\x1b[?1049l", cursor::Show, clear::All)?;
