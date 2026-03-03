@@ -44,9 +44,8 @@ fn print_width(
     content: &str,
 ) -> io::Result<()> {
     write!(stderr, "{}", cursor::Goto(x, y))?;
-    let mut line = content.to_string();
-    line.truncate(width as usize);
-    let n = width - u16::try_from(line.len()).expect("Invalid length");
+    let line: String = content.chars().take(width as usize).collect();
+    let n = width - u16::try_from(line.chars().count()).expect("Invalid length");
     let blank_space = " ".repeat(n as usize);
     write!(stderr, "{color}{line}\x1b[0m{blank_space}")?;
     Ok(())
