@@ -405,6 +405,7 @@ fn main() -> Result<(), io::Error> {
             }
             files
         };
+        let mut needs_recompute = false;
         match byte? {
             b'q' if !filter_mode => break,
             b'j' if !filter_mode => index += 1,
@@ -418,6 +419,7 @@ fn main() -> Result<(), io::Error> {
                 filter.clear();
                 index = 0;
                 scroll_offset = 0;
+                needs_recompute = true;
             }
             b'h' if !filter_mode => {
                 let cwd = get_cwd()?;
@@ -434,16 +436,19 @@ fn main() -> Result<(), io::Error> {
                         break;
                     }
                 }
+                needs_recompute = true;
             }
             b'.' if !filter_mode => {
                 show_hidden = !show_hidden;
                 index = 0;
                 scroll_offset = 0;
+                needs_recompute = true;
             }
             b's' if !filter_mode => {
                 sort_mode = sort_mode.cycle();
                 index = 0;
                 scroll_offset = 0;
+                needs_recompute = true;
             }
             b'o' if !filter_mode => {
                 let idx = usize::try_from(index.max(0)).expect("Invalid index");
@@ -464,12 +469,14 @@ fn main() -> Result<(), io::Error> {
                 filter.clear();
                 index = 0;
                 scroll_offset = 0;
+                needs_recompute = true;
             }
             0x1b if filter_mode => {
                 filter_mode = false;
                 filter.clear();
                 index = 0;
                 scroll_offset = 0;
+                needs_recompute = true;
             }
             0x0d if filter_mode => {
                 filter_mode = false;
@@ -478,11 +485,13 @@ fn main() -> Result<(), io::Error> {
                 filter.pop();
                 index = 0;
                 scroll_offset = 0;
+                needs_recompute = true;
             }
             b if filter_mode && (0x20..=0x7e).contains(&b) => {
                 filter.push(b as char);
                 index = 0;
                 scroll_offset = 0;
+                needs_recompute = true;
             }
             _ => {}
         }
@@ -491,13 +500,15 @@ fn main() -> Result<(), io::Error> {
             index = 0;
         }
 
-        let filtered_files = {
+        let filtered_files = if needs_recompute {
             let mut files = get_file_names(".", show_hidden, sort_mode)?;
             if !filter.is_empty() {
                 let fl = filter.to_lowercase();
                 files.retain(|f| f.name.to_lowercase().contains(&fl));
             }
             files
+        } else {
+            filtered_files
         };
         if index >= i32::try_from(filtered_files.len()).expect("Invalid index") {
             index = i32::try_from(filtered_files.len()).expect("Invalid index") - 1;
