@@ -411,15 +411,27 @@ fn main() -> Result<(), io::Error> {
             b'j' if !filter_mode => index += 1,
             b'k' if !filter_mode => index -= 1,
             b'l' if !filter_mode => {
-                if index >= 0 && index < filtered_files.len().try_into().expect("Invalid index") {
-                    try_cd(
-                        &filtered_files[usize::try_from(index).expect("Invalid index")].path,
-                    )?;
+                let idx = usize::try_from(index.max(0)).expect("Invalid index");
+                if idx < filtered_files.len() {
+                    let entry = &filtered_files[idx];
+                    if entry.path.is_dir() {
+                        try_cd(&entry.path)?;
+                        filter.clear();
+                        index = 0;
+                        scroll_offset = 0;
+                        needs_recompute = true;
+                    } else {
+                        let path = entry.path.clone();
+                        write!(stderr, "\x1b[?1049l")?;
+                        stderr.flush()?;
+                        drop(stderr);
+                        let editor = std::env::var("EDITOR")
+                            .unwrap_or_else(|_| String::from("xdg-open"));
+                        let _ = std::process::Command::new(&editor).arg(&path).status();
+                        stderr = io::stderr().into_raw_mode()?;
+                        write!(stderr, "\x1b[?1049h{}{}{}", clear::All, cursor::Hide, cursor::Goto(1, 1))?;
+                    }
                 }
-                filter.clear();
-                index = 0;
-                scroll_offset = 0;
-                needs_recompute = true;
             }
             b'h' if !filter_mode => {
                 let cwd = get_cwd()?;
