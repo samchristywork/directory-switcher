@@ -386,6 +386,7 @@ fn main() -> Result<(), io::Error> {
     let mut filter_mode = false;
     let mut sort_mode = SortMode::Name;
     let mut file_info_cache: (PathBuf, String) = (PathBuf::new(), String::new());
+    let mut last_term_size = terminal_size()?;
     write!(
         stderr,
         "\x1b[?1049h{}{}{}",
@@ -526,7 +527,12 @@ fn main() -> Result<(), io::Error> {
             index = i32::try_from(filtered_files.len()).expect("Invalid index") - 1;
         }
 
-        let (_, term_height) = terminal_size()?;
+        let term_size = terminal_size()?;
+        let (_, term_height) = term_size;
+        if term_size != last_term_size {
+            last_term_size = term_size;
+            write!(stderr, "{}", clear::All)?;
+        }
         let pane_height = term_height.saturating_sub(2) as i32;
         if index < scroll_offset {
             scroll_offset = index;
