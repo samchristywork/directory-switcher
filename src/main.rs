@@ -406,11 +406,17 @@ fn main() -> Result<(), io::Error> {
             }
             files
         };
+        let half_page = {
+            let (_, h) = terminal_size()?;
+            (h.saturating_sub(2) as i32) / 2
+        };
         let mut needs_recompute = false;
         match byte? {
             b'q' if !filter_mode => break,
             b'j' if !filter_mode => index += 1,
             b'k' if !filter_mode => index -= 1,
+            0x04 if !filter_mode => index += half_page,
+            0x15 if !filter_mode => index -= half_page,
             b'l' if !filter_mode => {
                 let idx = usize::try_from(index.max(0)).expect("Invalid index");
                 if idx < filtered_files.len() {
