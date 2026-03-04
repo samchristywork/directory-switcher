@@ -408,7 +408,14 @@ fn main() -> Result<(), io::Error> {
     let mut filter_mode = false;
     let mut sort_mode = SortMode::Name;
     let mut help_mode = false;
-    let mut file_info_cache: (PathBuf, String) = (PathBuf::new(), String::new());
+    let mut file_info_cache: (PathBuf, String) = {
+        let files = get_file_names(".", show_hidden, sort_mode)?;
+        if let Some(entry) = files.first() {
+            (entry.path.clone(), file_stdout(&entry.name))
+        } else {
+            (PathBuf::new(), String::new())
+        }
+    };
     let mut last_term_size = terminal_size()?;
     write!(
         stderr,
@@ -418,7 +425,7 @@ fn main() -> Result<(), io::Error> {
         cursor::Goto(1, 1)
     )?;
 
-    render(&mut stderr, index, show_hidden, &filter, filter_mode, sort_mode, scroll_offset, "", help_mode)?;
+    render(&mut stderr, index, show_hidden, &filter, filter_mode, sort_mode, scroll_offset, &file_info_cache.1, help_mode)?;
 
     for byte in io::stdin().bytes() {
         let filtered_files = {
