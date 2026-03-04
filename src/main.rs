@@ -47,7 +47,7 @@ fn print_width(
     let line: String = content.chars().take(width as usize).collect();
     let n = width - u16::try_from(line.chars().count()).expect("Invalid length");
     let blank_space = " ".repeat(n as usize);
-    write!(stderr, "{color}{line}\x1b[0m{blank_space}")?;
+    write!(stderr, "{color}{line}{blank_space}\x1b[0m")?;
     Ok(())
 }
 
@@ -148,7 +148,7 @@ fn render_pane(
             print_width(stderr, x, y, width, "\x1b[0m", "")?;
         } else if index == i {
             let file_info = &file_names[usize::try_from(i).expect("Invalid index")];
-            print_width(stderr, x, y, width, "\x1b[7m", &file_info.name)?;
+            print_width(stderr, x, y, width, &format!("{}\x1b[7m", file_info.color), &file_info.name)?;
         } else {
             let file_info = &file_names[usize::try_from(i).expect("Invalid index")];
             print_width(
