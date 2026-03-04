@@ -417,6 +417,10 @@ fn main() -> Result<(), io::Error> {
             b'k' if !filter_mode => index -= 1,
             0x04 if !filter_mode => index += half_page,
             0x15 if !filter_mode => index -= half_page,
+            b'g' if !filter_mode => index = 0,
+            b'G' if !filter_mode => {
+                index = i32::try_from(filtered_files.len().saturating_sub(1)).expect("Invalid index");
+            }
             b'l' if !filter_mode => {
                 let idx = usize::try_from(index.max(0)).expect("Invalid index");
                 if idx < filtered_files.len() {
