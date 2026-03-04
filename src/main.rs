@@ -134,7 +134,7 @@ fn render_pane(
             print_width(stderr, x, y, width, "\x1b[0m", "")?;
         }
 
-        print_width(stderr, x + 1, 3, width, "\x1b[1;31m", "Permission Denied")?;
+        print_width(stderr, x + 1, y + 1, width, "\x1b[1;31m", "Permission Denied")?;
         return Ok(());
     }
 
@@ -478,20 +478,25 @@ fn main() -> Result<(), io::Error> {
             }
             b'h' if !filter_mode => {
                 let cwd = get_cwd()?;
-                let dirname = cwd.split('/').collect::<Vec<_>>();
-                let old_dir = dirname.last().expect("Failed to get last directory");
-                try_cd(&PathBuf::from(".."))?;
-                filter.clear();
-                scroll_offset = 0;
-                let files = get_file_names(".", show_hidden, sort_mode)?;
-                index = 0;
-                for (i, _) in files.iter().enumerate() {
-                    if files[i].name == *old_dir {
-                        index = i32::try_from(i).expect("Invalid index");
-                        break;
+                if cwd != "/" {
+                    let old_dir = std::path::Path::new(&cwd)
+                        .file_name()
+                        .and_then(|n| n.to_str())
+                        .unwrap_or("")
+                        .to_string();
+                    try_cd(&PathBuf::from(".."))?;
+                    filter.clear();
+                    scroll_offset = 0;
+                    let files = get_file_names(".", show_hidden, sort_mode)?;
+                    index = 0;
+                    for (i, f) in files.iter().enumerate() {
+                        if f.name == old_dir {
+                            index = i32::try_from(i).expect("Invalid index");
+                            break;
+                        }
                     }
+                    needs_recompute = true;
                 }
-                needs_recompute = true;
             }
             b'.' if !filter_mode => {
                 show_hidden = !show_hidden;
