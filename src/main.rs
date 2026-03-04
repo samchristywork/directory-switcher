@@ -255,7 +255,7 @@ fn file_stdout(file_name: &str) -> String {
     String::from_utf8_lossy(&output.stdout).trim().to_string()
 }
 
-fn render(stderr: &mut dyn Write, index: i32, show_hidden: bool, filter: &str, filter_mode: bool, sort_mode: SortMode, scroll_offset: i32, file_info: &str) -> io::Result<()> {
+fn render(stderr: &mut dyn Write, index: i32, show_hidden: bool, filter: &str, filter_mode: bool, sort_mode: SortMode, scroll_offset: i32, file_info: &str, help_mode: bool) -> io::Result<()> {
     let current_dir = get_cwd()?;
 
     let mut file_names = get_file_names(".", show_hidden, sort_mode)?;
@@ -357,18 +357,40 @@ fn render(stderr: &mut dyn Write, index: i32, show_hidden: bool, filter: &str, f
     render_pane(stderr, 0, 2, par_visible_index, par_files, false, pane_width, height - 1)?;
     render_pane(stderr, width / 3, 2, mid_visible_index, mid_files, false, pane_width, height - 1)?;
 
-    match child_file_names {
-        Some(Ok(ref entries)) => {
-            render_pane(stderr, 2 * width / 3, 2, -1, entries, false, pane_width, height - 1)?;
+    if help_mode {
+        let keys: &[(&str, &str)] = &[
+            ("j / k",      "move down / up"),
+            ("h / l",      "parent / child dir"),
+            ("g / G",      "first / last entry"),
+            ("^D / ^U",    "half page down / up"),
+            (".",          "toggle hidden files"),
+            ("/ <text>",   "filter entries"),
+            ("s",          "cycle sort (name/size/mtime)"),
+            ("o",          "open file in $EDITOR"),
+            ("?",          "toggle this help"),
+            ("q",          "quit"),
+        ];
+        for (i, (key, desc)) in keys.iter().enumerate() {
+            let line = format!("  {key:<10}  {desc}");
+            print_width(stderr, 2 * width / 3 + 1, i as u16 + 3, pane_width, "\x1b[1;36m", &line)?;
         }
-        Some(Err(_)) => {
-            render_pane(stderr, 2 * width / 3, 2, -1, &[], true, pane_width, height - 1)?;
+        for i in keys.len() as u16..(height - 2) {
+            print_width(stderr, 2 * width / 3 + 1, i + 3, pane_width, "", "")?;
         }
-        None => {
-            let preview = read_file_preview(&selected.path, (height - 1) as usize);
-            for i in 0..(height - 1) {
-                let content = preview.get(i as usize).map(|s| s.as_str()).unwrap_or("");
-                print_width(stderr, 2 * width / 3 + 1, i + 3, pane_width, "\x1b[0m", content)?;
+    } else {
+        match child_file_names {
+            Some(Ok(ref entries)) => {
+                render_pane(stderr, 2 * width / 3, 2, -1, entries, false, pane_width, height - 1)?;
+            }
+            Some(Err(_)) => {
+                render_pane(stderr, 2 * width / 3, 2, -1, &[], true, pane_width, height - 1)?;
+            }
+            None => {
+                let preview = read_file_preview(&selected.path, (height - 1) as usize);
+                for i in 0..(height - 1) {
+                    let content = preview.get(i as usize).map(|s| s.as_str()).unwrap_or("");
+                    print_width(stderr, 2 * width / 3 + 1, i + 3, pane_width, "\x1b[0m", content)?;
+                }
             }
         }
     }
@@ -385,6 +407,7 @@ fn main() -> Result<(), io::Error> {
     let mut filter = String::new();
     let mut filter_mode = false;
     let mut sort_mode = SortMode::Name;
+    let mut help_mode = false;
     let mut file_info_cache: (PathBuf, String) = (PathBuf::new(), String::new());
     let mut last_term_size = terminal_size()?;
     write!(
@@ -395,7 +418,7 @@ fn main() -> Result<(), io::Error> {
         cursor::Goto(1, 1)
     )?;
 
-    render(&mut stderr, index, show_hidden, &filter, filter_mode, sort_mode, scroll_offset, "")?;
+    render(&mut stderr, index, show_hidden, &filter, filter_mode, sort_mode, scroll_offset, "", help_mode)?;
 
     for byte in io::stdin().bytes() {
         let filtered_files = {
@@ -417,6 +440,7 @@ fn main() -> Result<(), io::Error> {
             b'k' if !filter_mode => index -= 1,
             0x04 if !filter_mode => index += half_page,
             0x15 if !filter_mode => index -= half_page,
+            b'?' if !filter_mode => help_mode = !help_mode,
             b'g' if !filter_mode => index = 0,
             b'G' if !filter_mode => {
                 index = i32::try_from(filtered_files.len().saturating_sub(1)).expect("Invalid index");
@@ -564,7 +588,7 @@ fn main() -> Result<(), io::Error> {
             file_info_cache = (selected_path, file_stdout(name));
         }
 
-        render(&mut stderr, index, show_hidden, &filter, filter_mode, sort_mode, scroll_offset, &file_info_cache.1)?;
+        render(&mut stderr, index, show_hidden, &filter, filter_mode, sort_mode, scroll_offset, &file_info_cache.1, help_mode)?;
     }
 
     write!(stderr, "{}{}\x1b[?1049l", cursor::Show, clear::All)?;
