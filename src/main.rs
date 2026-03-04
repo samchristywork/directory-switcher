@@ -445,7 +445,7 @@ fn main() -> Result<(), io::Error> {
             b'G' if !filter_mode => {
                 index = i32::try_from(filtered_files.len().saturating_sub(1)).expect("Invalid index");
             }
-            b'l' if !filter_mode => {
+            b'l' | 0x0d if !filter_mode => {
                 let idx = usize::try_from(index.max(0)).expect("Invalid index");
                 if idx < filtered_files.len() {
                     let entry = &filtered_files[idx];
