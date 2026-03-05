@@ -2,7 +2,11 @@ use std::cmp::Reverse;
 use std::io::{self, BufRead, Read, Write};
 use std::os::unix::fs::MetadataExt;
 use std::path::PathBuf;
-use termion::{clear, cursor, raw::{IntoRawMode, RawTerminal}, terminal_size};
+use termion::{
+    clear, cursor,
+    raw::{IntoRawMode, RawTerminal},
+    terminal_size,
+};
 
 #[derive(Clone, Copy, PartialEq)]
 enum SortMode {
@@ -14,16 +18,16 @@ enum SortMode {
 impl SortMode {
     fn cycle(self) -> Self {
         match self {
-            Self::Name  => Self::Size,
-            Self::Size  => Self::Mtime,
+            Self::Name => Self::Size,
+            Self::Size => Self::Mtime,
             Self::Mtime => Self::Name,
         }
     }
 
     fn label(self) -> &'static str {
         match self {
-            Self::Name  => "name",
-            Self::Size  => "size",
+            Self::Name => "name",
+            Self::Size => "size",
             Self::Mtime => "mtime",
         }
     }
@@ -50,7 +54,6 @@ fn print_width(
     write!(stderr, "{color}{line}{blank_space}\x1b[0m")?;
     Ok(())
 }
-
 
 fn get_cwd() -> io::Result<String> {
     let path = std::env::current_dir()?;
@@ -81,7 +84,11 @@ fn try_cd(path: &PathBuf) -> io::Result<()> {
     Ok(())
 }
 
-fn get_file_names(directory: &str, show_hidden: bool, sort_mode: SortMode) -> io::Result<Vec<FileInfo>> {
+fn get_file_names(
+    directory: &str,
+    show_hidden: bool,
+    sort_mode: SortMode,
+) -> io::Result<Vec<FileInfo>> {
     let mut file_names = Vec::new();
 
     let dir_path = PathBuf::from(directory);
@@ -92,9 +99,13 @@ fn get_file_names(directory: &str, show_hidden: bool, sort_mode: SortMode) -> io
     let entries = std::fs::read_dir(directory)?;
     let mut sorted_entries: Vec<_> = entries.flatten().collect();
     match sort_mode {
-        SortMode::Name  => sorted_entries.sort_by(|a, b| a.file_name().cmp(&b.file_name())),
-        SortMode::Size  => sorted_entries.sort_by_key(|e| Reverse(e.metadata().map(|m| m.len()).unwrap_or(0))),
-        SortMode::Mtime => sorted_entries.sort_by_key(|e| Reverse(e.metadata().map(|m| m.mtime()).unwrap_or(0))),
+        SortMode::Name => sorted_entries.sort_by(|a, b| a.file_name().cmp(&b.file_name())),
+        SortMode::Size => {
+            sorted_entries.sort_by_key(|e| Reverse(e.metadata().map(|m| m.len()).unwrap_or(0)))
+        }
+        SortMode::Mtime => {
+            sorted_entries.sort_by_key(|e| Reverse(e.metadata().map(|m| m.mtime()).unwrap_or(0)))
+        }
     }
 
     for entry in sorted_entries {
@@ -127,7 +138,11 @@ fn get_file_names(directory: &str, show_hidden: bool, sort_mode: SortMode) -> io
     Ok(file_names)
 }
 
-fn get_filtered_files(show_hidden: bool, sort_mode: SortMode, filter: &str) -> io::Result<Vec<FileInfo>> {
+fn get_filtered_files(
+    show_hidden: bool,
+    sort_mode: SortMode,
+    filter: &str,
+) -> io::Result<Vec<FileInfo>> {
     let mut files = get_file_names(".", show_hidden, sort_mode)?;
     if !filter.is_empty() {
         let fl = filter.to_lowercase();
@@ -136,14 +151,23 @@ fn get_filtered_files(show_hidden: bool, sort_mode: SortMode, filter: &str) -> i
     Ok(files)
 }
 
-fn open_in_editor(mut stderr: RawTerminal<io::Stderr>, path: &PathBuf) -> io::Result<RawTerminal<io::Stderr>> {
+fn open_in_editor(
+    mut stderr: RawTerminal<io::Stderr>,
+    path: &PathBuf,
+) -> io::Result<RawTerminal<io::Stderr>> {
     write!(stderr, "\x1b[?1049l")?;
     stderr.flush()?;
     drop(stderr);
     let editor = std::env::var("EDITOR").unwrap_or_else(|_| String::from("xdg-open"));
     let _ = std::process::Command::new(&editor).arg(path).status();
     let mut stderr = io::stderr().into_raw_mode()?;
-    write!(stderr, "\x1b[?1049h{}{}{}", clear::All, cursor::Hide, cursor::Goto(1, 1))?;
+    write!(
+        stderr,
+        "\x1b[?1049h{}{}{}",
+        clear::All,
+        cursor::Hide,
+        cursor::Goto(1, 1)
+    )?;
     Ok(stderr)
 }
 
@@ -166,7 +190,14 @@ fn render_pane(
             print_width(stderr, x, y, width, "\x1b[0m", "")?;
         }
 
-        print_width(stderr, x + 1, y + 1, width, "\x1b[1;31m", "Permission Denied")?;
+        print_width(
+            stderr,
+            x + 1,
+            y + 1,
+            width,
+            "\x1b[1;31m",
+            "Permission Denied",
+        )?;
         return Ok(());
     }
 
@@ -180,7 +211,14 @@ fn render_pane(
             print_width(stderr, x, y, width, "\x1b[0m", "")?;
         } else if index == i {
             let file_info = &file_names[usize::try_from(i).expect("Invalid index")];
-            print_width(stderr, x, y, width, &format!("{}\x1b[7m", file_info.color), &file_info.name)?;
+            print_width(
+                stderr,
+                x,
+                y,
+                width,
+                &format!("{}\x1b[7m", file_info.color),
+                &file_info.name,
+            )?;
         } else {
             let file_info = &file_names[usize::try_from(i).expect("Invalid index")];
             print_width(
@@ -222,9 +260,15 @@ fn format_permissions(mode: u32) -> String {
         _ => '-',
     };
     let bits = [
-        (0o400, 'r'), (0o200, 'w'), (0o100, 'x'),
-        (0o040, 'r'), (0o020, 'w'), (0o010, 'x'),
-        (0o004, 'r'), (0o002, 'w'), (0o001, 'x'),
+        (0o400, 'r'),
+        (0o200, 'w'),
+        (0o100, 'x'),
+        (0o040, 'r'),
+        (0o020, 'w'),
+        (0o010, 'x'),
+        (0o004, 'r'),
+        (0o002, 'w'),
+        (0o001, 'x'),
     ];
     let mut s = String::with_capacity(10);
     s.push(ft);
@@ -250,16 +294,35 @@ fn format_size(bytes: u64) -> String {
 }
 
 fn epoch_days_to_date(mut d: u64) -> (u64, u64, u64) {
-    let n400 = d / 146097; d %= 146097;
-    let n100 = (d / 36524).min(3); d -= n100 * 36524;
-    let n4   = d / 1461;   d %= 1461;
-    let n1   = (d / 365).min(3); d -= n1 * 365;
+    let n400 = d / 146097;
+    d %= 146097;
+    let n100 = (d / 36524).min(3);
+    d -= n100 * 36524;
+    let n4 = d / 1461;
+    d %= 1461;
+    let n1 = (d / 365).min(3);
+    d -= n1 * 365;
     let year = n400 * 400 + n100 * 100 + n4 * 4 + n1 + 1970;
     let leap = (year % 4 == 0 && year % 100 != 0) || year % 400 == 0;
-    let mdays: [u64; 12] = [31, if leap { 29 } else { 28 }, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
+    let mdays: [u64; 12] = [
+        31,
+        if leap { 29 } else { 28 },
+        31,
+        30,
+        31,
+        30,
+        31,
+        31,
+        30,
+        31,
+        30,
+        31,
+    ];
     let mut month = 1u64;
     for md in mdays {
-        if d < md { break; }
+        if d < md {
+            break;
+        }
         d -= md;
         month += 1;
     }
@@ -267,9 +330,11 @@ fn epoch_days_to_date(mut d: u64) -> (u64, u64, u64) {
 }
 
 fn format_mtime(secs: i64) -> String {
-    if secs < 0 { return String::from("?"); }
+    if secs < 0 {
+        return String::from("?");
+    }
     let secs = secs as u64;
-    let mins  = secs / 60;
+    let mins = secs / 60;
     let hours = mins / 60;
     let (y, mo, d) = epoch_days_to_date(hours / 24);
     format!("{y}-{mo:02}-{d:02} {:02}:{:02}", hours % 24, mins % 60)
@@ -294,7 +359,17 @@ fn file_stdout(file_name: &str) -> String {
     String::from_utf8_lossy(&output.stdout).trim().to_string()
 }
 
-fn render(stderr: &mut dyn Write, index: i32, show_hidden: bool, filter: &str, filter_mode: bool, sort_mode: SortMode, scroll_offset: i32, file_info: &str, help_mode: bool) -> io::Result<()> {
+fn render(
+    stderr: &mut dyn Write,
+    index: i32,
+    show_hidden: bool,
+    filter: &str,
+    filter_mode: bool,
+    sort_mode: SortMode,
+    scroll_offset: i32,
+    file_info: &str,
+    help_mode: bool,
+) -> io::Result<()> {
     let current_dir = get_cwd()?;
 
     let file_names = get_filtered_files(show_hidden, sort_mode, filter)?;
@@ -354,9 +429,36 @@ fn render(stderr: &mut dyn Write, index: i32, show_hidden: bool, filter: &str, f
     if file_names.is_empty() {
         print_width(stderr, 1, 1, width, "\x1b[1;32m", &header)?;
         print_width(stderr, 1, 2, width, "\x1b[1;33m", &status_line)?;
-        render_pane(stderr, 0, pane_y, par_visible_index, par_files, false, content_width, height - pane_y)?;
-        render_pane(stderr, width / 3, pane_y, -1, &[], false, content_width, height - pane_y)?;
-        render_pane(stderr, 2 * width / 3, pane_y, -1, &[], false, content_width, height - pane_y)?;
+        render_pane(
+            stderr,
+            0,
+            pane_y,
+            par_visible_index,
+            par_files,
+            false,
+            content_width,
+            height - pane_y,
+        )?;
+        render_pane(
+            stderr,
+            width / 3,
+            pane_y,
+            -1,
+            &[],
+            false,
+            content_width,
+            height - pane_y,
+        )?;
+        render_pane(
+            stderr,
+            2 * width / 3,
+            pane_y,
+            -1,
+            &[],
+            false,
+            content_width,
+            height - pane_y,
+        )?;
         stderr.flush()?;
         return Ok(());
     }
@@ -384,49 +486,106 @@ fn render(stderr: &mut dyn Write, index: i32, show_hidden: bool, filter: &str, f
         let meta = file_metadata_str(&selected.path);
         let info = match (meta.is_empty(), file_info.is_empty()) {
             (false, false) => format!("{meta}   {file_info}"),
-            (false, true)  => meta,
-            _              => file_info.to_string(),
+            (false, true) => meta,
+            _ => file_info.to_string(),
         };
         print_width(stderr, 1, 2, width, "", &info)?;
     }
 
     print_width(stderr, 1, 1, width, "\x1b[1;32m", &header)?;
-    render_pane(stderr, 0, pane_y, par_visible_index, par_files, false, content_width, height - pane_y)?;
-    render_pane(stderr, width / 3, pane_y, mid_visible_index, mid_files, false, content_width, height - pane_y)?;
+    render_pane(
+        stderr,
+        0,
+        pane_y,
+        par_visible_index,
+        par_files,
+        false,
+        content_width,
+        height - pane_y,
+    )?;
+    render_pane(
+        stderr,
+        width / 3,
+        pane_y,
+        mid_visible_index,
+        mid_files,
+        false,
+        content_width,
+        height - pane_y,
+    )?;
 
     if help_mode {
         let keys: &[(&str, &str)] = &[
-            ("j / k",      "move down / up"),
-            ("h / l",      "parent / child dir"),
-            ("g / G",      "first / last entry"),
-            ("^D / ^U",    "half page down / up"),
-            (".",          "toggle hidden files"),
-            ("/ <text>",   "filter entries"),
-            ("s",          "cycle sort (name/size/mtime)"),
-            ("o",          "open file in $EDITOR"),
-            ("?",          "toggle this help"),
-            ("q",          "quit"),
+            ("j / k", "move down / up"),
+            ("h / l", "parent / child dir"),
+            ("g / G", "first / last entry"),
+            ("^D / ^U", "half page down / up"),
+            (".", "toggle hidden files"),
+            ("/ <text>", "filter entries"),
+            ("s", "cycle sort (name/size/mtime)"),
+            ("o", "open file in $EDITOR"),
+            ("?", "toggle this help"),
+            ("q", "quit"),
         ];
         for (i, (key, desc)) in keys.iter().enumerate() {
             let line = format!("  {key:<10}  {desc}");
-            print_width(stderr, 2 * width / 3 + 1, pane_y + 1 + i as u16, content_width, "\x1b[1;36m", &line)?;
+            print_width(
+                stderr,
+                2 * width / 3 + 1,
+                pane_y + 1 + i as u16,
+                content_width,
+                "\x1b[1;36m",
+                &line,
+            )?;
         }
         for i in keys.len() as u16..(height - pane_y) {
-            print_width(stderr, 2 * width / 3 + 1, pane_y + 1 + i, content_width, "", "")?;
+            print_width(
+                stderr,
+                2 * width / 3 + 1,
+                pane_y + 1 + i,
+                content_width,
+                "",
+                "",
+            )?;
         }
     } else {
         match child_file_names {
             Some(Ok(ref entries)) => {
-                render_pane(stderr, 2 * width / 3, pane_y, -1, entries, false, content_width, height - pane_y)?;
+                render_pane(
+                    stderr,
+                    2 * width / 3,
+                    pane_y,
+                    -1,
+                    entries,
+                    false,
+                    content_width,
+                    height - pane_y,
+                )?;
             }
             Some(Err(_)) => {
-                render_pane(stderr, 2 * width / 3, pane_y, -1, &[], true, content_width, height - pane_y)?;
+                render_pane(
+                    stderr,
+                    2 * width / 3,
+                    pane_y,
+                    -1,
+                    &[],
+                    true,
+                    content_width,
+                    height - pane_y,
+                )?;
             }
             None => {
                 let preview = read_file_preview(&selected.path, (height - pane_y) as usize);
                 for i in 0..(height - pane_y) {
                     let content = preview.get(i as usize).map(|s| s.as_str()).unwrap_or("");
-                    print_width(stderr, 2 * width / 3 + 1, pane_y + 1 + i, content_width, "\x1b[0m", content)?;
+                    print_width(
+                        stderr,
+                        2 * width / 3 + 1,
+                        pane_y + 1 + i,
+                        content_width,
+                        "\x1b[0m",
+                        content,
+                    )?;
                 }
             }
         }
@@ -462,7 +621,17 @@ fn main() -> Result<(), io::Error> {
         cursor::Goto(1, 1)
     )?;
 
-    render(&mut stderr, index, show_hidden, &filter, filter_mode, sort_mode, scroll_offset, &file_info_cache.1, help_mode)?;
+    render(
+        &mut stderr,
+        index,
+        show_hidden,
+        &filter,
+        filter_mode,
+        sort_mode,
+        scroll_offset,
+        &file_info_cache.1,
+        help_mode,
+    )?;
 
     for byte in io::stdin().bytes() {
         let half_page = {
@@ -594,7 +763,17 @@ fn main() -> Result<(), io::Error> {
             file_info_cache = (selected_path, file_stdout(name));
         }
 
-        render(&mut stderr, index, show_hidden, &filter, filter_mode, sort_mode, scroll_offset, &file_info_cache.1, help_mode)?;
+        render(
+            &mut stderr,
+            index,
+            show_hidden,
+            &filter,
+            filter_mode,
+            sort_mode,
+            scroll_offset,
+            &file_info_cache.1,
+            help_mode,
+        )?;
     }
 
     write!(stderr, "{}{}\x1b[?1049l", cursor::Show, clear::All)?;
