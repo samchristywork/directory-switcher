@@ -2,7 +2,7 @@ use std::cmp::Reverse;
 use std::io::{self, BufRead, Read, Write};
 use std::os::unix::fs::MetadataExt;
 use std::path::PathBuf;
-use termion::{clear, cursor, raw::IntoRawMode, terminal_size};
+use termion::{clear, cursor, raw::{IntoRawMode, RawTerminal}, terminal_size};
 
 #[derive(Clone, Copy, PartialEq)]
 enum SortMode {
@@ -125,6 +125,26 @@ fn get_file_names(directory: &str, show_hidden: bool, sort_mode: SortMode) -> io
         });
     }
     Ok(file_names)
+}
+
+fn get_filtered_files(show_hidden: bool, sort_mode: SortMode, filter: &str) -> io::Result<Vec<FileInfo>> {
+    let mut files = get_file_names(".", show_hidden, sort_mode)?;
+    if !filter.is_empty() {
+        let fl = filter.to_lowercase();
+        files.retain(|f| f.name.to_lowercase().contains(&fl));
+    }
+    Ok(files)
+}
+
+fn open_in_editor(mut stderr: RawTerminal<io::Stderr>, path: &PathBuf) -> io::Result<RawTerminal<io::Stderr>> {
+    write!(stderr, "\x1b[?1049l")?;
+    stderr.flush()?;
+    drop(stderr);
+    let editor = std::env::var("EDITOR").unwrap_or_else(|_| String::from("xdg-open"));
+    let _ = std::process::Command::new(&editor).arg(path).status();
+    let mut stderr = io::stderr().into_raw_mode()?;
+    write!(stderr, "\x1b[?1049h{}{}{}", clear::All, cursor::Hide, cursor::Goto(1, 1))?;
+    Ok(stderr)
 }
 
 fn render_pane(
@@ -277,11 +297,7 @@ fn file_stdout(file_name: &str) -> String {
 fn render(stderr: &mut dyn Write, index: i32, show_hidden: bool, filter: &str, filter_mode: bool, sort_mode: SortMode, scroll_offset: i32, file_info: &str, help_mode: bool) -> io::Result<()> {
     let current_dir = get_cwd()?;
 
-    let mut file_names = get_file_names(".", show_hidden, sort_mode)?;
-    if !filter.is_empty() {
-        let fl = filter.to_lowercase();
-        file_names.retain(|f| f.name.to_lowercase().contains(&fl));
-    }
+    let file_names = get_filtered_files(show_hidden, sort_mode, filter)?;
 
     let parent_file_names = if current_dir == "/" {
         vec![]
@@ -463,11 +479,7 @@ fn main() -> Result<(), io::Error> {
             b'g' if !filter_mode => index = 0,
             b'G' if !filter_mode => index = i32::MAX,
             b'l' | 0x0d if !filter_mode => {
-                let mut files = get_file_names(".", show_hidden, sort_mode)?;
-                if !filter.is_empty() {
-                    let fl = filter.to_lowercase();
-                    files.retain(|f| f.name.to_lowercase().contains(&fl));
-                }
+                let files = get_filtered_files(show_hidden, sort_mode, &filter)?;
                 let idx = usize::try_from(index.max(0)).expect("Invalid index");
                 if idx < files.len() {
                     if files[idx].path.is_dir() {
@@ -476,15 +488,7 @@ fn main() -> Result<(), io::Error> {
                         index = 0;
                         scroll_offset = 0;
                     } else {
-                        let path = files[idx].path.clone();
-                        write!(stderr, "\x1b[?1049l")?;
-                        stderr.flush()?;
-                        drop(stderr);
-                        let editor = std::env::var("EDITOR")
-                            .unwrap_or_else(|_| String::from("xdg-open"));
-                        let _ = std::process::Command::new(&editor).arg(&path).status();
-                        stderr = io::stderr().into_raw_mode()?;
-                        write!(stderr, "\x1b[?1049h{}{}{}", clear::All, cursor::Hide, cursor::Goto(1, 1))?;
+                        stderr = open_in_editor(stderr, &files[idx].path)?;
                     }
                 }
             }
@@ -520,22 +524,10 @@ fn main() -> Result<(), io::Error> {
                 scroll_offset = 0;
             }
             b'o' if !filter_mode => {
-                let mut files = get_file_names(".", show_hidden, sort_mode)?;
-                if !filter.is_empty() {
-                    let fl = filter.to_lowercase();
-                    files.retain(|f| f.name.to_lowercase().contains(&fl));
-                }
+                let files = get_filtered_files(show_hidden, sort_mode, &filter)?;
                 let idx = usize::try_from(index.max(0)).expect("Invalid index");
                 if idx < files.len() && !files[idx].path.is_dir() {
-                    let path = files[idx].path.clone();
-                    write!(stderr, "\x1b[?1049l")?;
-                    stderr.flush()?;
-                    drop(stderr);
-                    let editor = std::env::var("EDITOR")
-                        .unwrap_or_else(|_| String::from("xdg-open"));
-                    let _ = std::process::Command::new(&editor).arg(&path).status();
-                    stderr = io::stderr().into_raw_mode()?;
-                    write!(stderr, "\x1b[?1049h{}{}{}", clear::All, cursor::Hide, cursor::Goto(1, 1))?;
+                    stderr = open_in_editor(stderr, &files[idx].path)?;
                 }
             }
             b'/' if !filter_mode => {
@@ -570,14 +562,7 @@ fn main() -> Result<(), io::Error> {
             index = 0;
         }
 
-        let filtered_files = {
-            let mut files = get_file_names(".", show_hidden, sort_mode)?;
-            if !filter.is_empty() {
-                let fl = filter.to_lowercase();
-                files.retain(|f| f.name.to_lowercase().contains(&fl));
-            }
-            files
-        };
+        let filtered_files = get_filtered_files(show_hidden, sort_mode, &filter)?;
         if index >= i32::try_from(filtered_files.len()).expect("Invalid index") {
             index = i32::try_from(filtered_files.len()).expect("Invalid index") - 1;
         }
