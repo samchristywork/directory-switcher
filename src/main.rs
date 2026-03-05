@@ -448,19 +448,10 @@ fn main() -> Result<(), io::Error> {
     render(&mut stderr, index, show_hidden, &filter, filter_mode, sort_mode, scroll_offset, &file_info_cache.1, help_mode)?;
 
     for byte in io::stdin().bytes() {
-        let filtered_files = {
-            let mut files = get_file_names(".", show_hidden, sort_mode)?;
-            if !filter.is_empty() {
-                let fl = filter.to_lowercase();
-                files.retain(|f| f.name.to_lowercase().contains(&fl));
-            }
-            files
-        };
         let half_page = {
             let (_, h) = terminal_size()?;
             (h.saturating_sub(2) as i32) / 2
         };
-        let mut needs_recompute = false;
         match byte? {
             b'q' if !filter_mode => break,
             b'j' if !filter_mode => index += 1,
@@ -469,21 +460,22 @@ fn main() -> Result<(), io::Error> {
             0x15 if !filter_mode => index -= half_page,
             b'?' if !filter_mode => help_mode = !help_mode,
             b'g' if !filter_mode => index = 0,
-            b'G' if !filter_mode => {
-                index = i32::try_from(filtered_files.len().saturating_sub(1)).expect("Invalid index");
-            }
+            b'G' if !filter_mode => index = i32::MAX,
             b'l' | 0x0d if !filter_mode => {
+                let mut files = get_file_names(".", show_hidden, sort_mode)?;
+                if !filter.is_empty() {
+                    let fl = filter.to_lowercase();
+                    files.retain(|f| f.name.to_lowercase().contains(&fl));
+                }
                 let idx = usize::try_from(index.max(0)).expect("Invalid index");
-                if idx < filtered_files.len() {
-                    let entry = &filtered_files[idx];
-                    if entry.path.is_dir() {
-                        try_cd(&entry.path)?;
+                if idx < files.len() {
+                    if files[idx].path.is_dir() {
+                        try_cd(&files[idx].path)?;
                         filter.clear();
                         index = 0;
                         scroll_offset = 0;
-                        needs_recompute = true;
                     } else {
-                        let path = entry.path.clone();
+                        let path = files[idx].path.clone();
                         write!(stderr, "\x1b[?1049l")?;
                         stderr.flush()?;
                         drop(stderr);
@@ -514,25 +506,27 @@ fn main() -> Result<(), io::Error> {
                             break;
                         }
                     }
-                    needs_recompute = true;
                 }
             }
             b'.' if !filter_mode => {
                 show_hidden = !show_hidden;
                 index = 0;
                 scroll_offset = 0;
-                needs_recompute = true;
             }
             b's' if !filter_mode => {
                 sort_mode = sort_mode.cycle();
                 index = 0;
                 scroll_offset = 0;
-                needs_recompute = true;
             }
             b'o' if !filter_mode => {
+                let mut files = get_file_names(".", show_hidden, sort_mode)?;
+                if !filter.is_empty() {
+                    let fl = filter.to_lowercase();
+                    files.retain(|f| f.name.to_lowercase().contains(&fl));
+                }
                 let idx = usize::try_from(index.max(0)).expect("Invalid index");
-                if idx < filtered_files.len() && !filtered_files[idx].path.is_dir() {
-                    let path = filtered_files[idx].path.clone();
+                if idx < files.len() && !files[idx].path.is_dir() {
+                    let path = files[idx].path.clone();
                     write!(stderr, "\x1b[?1049l")?;
                     stderr.flush()?;
                     drop(stderr);
@@ -548,14 +542,12 @@ fn main() -> Result<(), io::Error> {
                 filter.clear();
                 index = 0;
                 scroll_offset = 0;
-                needs_recompute = true;
             }
             0x1b if filter_mode => {
                 filter_mode = false;
                 filter.clear();
                 index = 0;
                 scroll_offset = 0;
-                needs_recompute = true;
             }
             0x0d if filter_mode => {
                 filter_mode = false;
@@ -564,13 +556,11 @@ fn main() -> Result<(), io::Error> {
                 filter.pop();
                 index = 0;
                 scroll_offset = 0;
-                needs_recompute = true;
             }
             b if filter_mode && (0x20..=0x7e).contains(&b) => {
                 filter.push(b as char);
                 index = 0;
                 scroll_offset = 0;
-                needs_recompute = true;
             }
             _ => {}
         }
@@ -579,15 +569,13 @@ fn main() -> Result<(), io::Error> {
             index = 0;
         }
 
-        let filtered_files = if needs_recompute {
+        let filtered_files = {
             let mut files = get_file_names(".", show_hidden, sort_mode)?;
             if !filter.is_empty() {
                 let fl = filter.to_lowercase();
                 files.retain(|f| f.name.to_lowercase().contains(&fl));
             }
             files
-        } else {
-            filtered_files
         };
         if index >= i32::try_from(filtered_files.len()).expect("Invalid index") {
             index = i32::try_from(filtered_files.len()).expect("Invalid index") - 1;
