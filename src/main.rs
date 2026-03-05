@@ -324,6 +324,7 @@ fn render(stderr: &mut dyn Write, index: i32, show_hidden: bool, filter: &str, f
         format!("{current_dir}  [{}]  {count_str}", sort_mode.label())
     };
 
+    let pane_y: u16 = 2;
     let pane_height = (height as i32).saturating_sub(2);
 
     let par_scroll = if parent_index > 0 {
@@ -337,9 +338,9 @@ fn render(stderr: &mut dyn Write, index: i32, show_hidden: bool, filter: &str, f
     if file_names.is_empty() {
         print_width(stderr, 1, 1, width, "\x1b[1;32m", &header)?;
         print_width(stderr, 1, 2, width, "\x1b[1;33m", &status_line)?;
-        render_pane(stderr, 0, 2, par_visible_index, par_files, false, content_width, height - 2)?;
-        render_pane(stderr, width / 3, 2, -1, &[], false, content_width, height - 2)?;
-        render_pane(stderr, 2 * width / 3, 2, -1, &[], false, content_width, height - 2)?;
+        render_pane(stderr, 0, pane_y, par_visible_index, par_files, false, content_width, height - pane_y)?;
+        render_pane(stderr, width / 3, pane_y, -1, &[], false, content_width, height - pane_y)?;
+        render_pane(stderr, 2 * width / 3, pane_y, -1, &[], false, content_width, height - pane_y)?;
         stderr.flush()?;
         return Ok(());
     }
@@ -374,8 +375,8 @@ fn render(stderr: &mut dyn Write, index: i32, show_hidden: bool, filter: &str, f
     }
 
     print_width(stderr, 1, 1, width, "\x1b[1;32m", &header)?;
-    render_pane(stderr, 0, 2, par_visible_index, par_files, false, content_width, height - 2)?;
-    render_pane(stderr, width / 3, 2, mid_visible_index, mid_files, false, content_width, height - 2)?;
+    render_pane(stderr, 0, pane_y, par_visible_index, par_files, false, content_width, height - pane_y)?;
+    render_pane(stderr, width / 3, pane_y, mid_visible_index, mid_files, false, content_width, height - pane_y)?;
 
     if help_mode {
         let keys: &[(&str, &str)] = &[
@@ -392,24 +393,24 @@ fn render(stderr: &mut dyn Write, index: i32, show_hidden: bool, filter: &str, f
         ];
         for (i, (key, desc)) in keys.iter().enumerate() {
             let line = format!("  {key:<10}  {desc}");
-            print_width(stderr, 2 * width / 3 + 1, i as u16 + 3, content_width, "\x1b[1;36m", &line)?;
+            print_width(stderr, 2 * width / 3 + 1, pane_y + 1 + i as u16, content_width, "\x1b[1;36m", &line)?;
         }
-        for i in keys.len() as u16..(height - 2) {
-            print_width(stderr, 2 * width / 3 + 1, i + 3, content_width, "", "")?;
+        for i in keys.len() as u16..(height - pane_y) {
+            print_width(stderr, 2 * width / 3 + 1, pane_y + 1 + i, content_width, "", "")?;
         }
     } else {
         match child_file_names {
             Some(Ok(ref entries)) => {
-                render_pane(stderr, 2 * width / 3, 2, -1, entries, false, content_width, height - 2)?;
+                render_pane(stderr, 2 * width / 3, pane_y, -1, entries, false, content_width, height - pane_y)?;
             }
             Some(Err(_)) => {
-                render_pane(stderr, 2 * width / 3, 2, -1, &[], true, content_width, height - 2)?;
+                render_pane(stderr, 2 * width / 3, pane_y, -1, &[], true, content_width, height - pane_y)?;
             }
             None => {
-                let preview = read_file_preview(&selected.path, (height - 2) as usize);
-                for i in 0..(height - 2) {
+                let preview = read_file_preview(&selected.path, (height - pane_y) as usize);
+                for i in 0..(height - pane_y) {
                     let content = preview.get(i as usize).map(|s| s.as_str()).unwrap_or("");
-                    print_width(stderr, 2 * width / 3 + 1, i + 3, content_width, "\x1b[0m", content)?;
+                    print_width(stderr, 2 * width / 3 + 1, pane_y + 1 + i, content_width, "\x1b[0m", content)?;
                 }
             }
         }
