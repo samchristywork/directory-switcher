@@ -166,9 +166,16 @@ fn render_pane(
 }
 
 fn read_file_preview(path: &PathBuf, max_lines: usize) -> Vec<String> {
-    let Ok(file) = std::fs::File::open(path) else {
+    let Ok(mut file) = std::fs::File::open(path) else {
         return vec![];
     };
+    let mut sniff = [0u8; 8192];
+    let n = file.read(&mut sniff).unwrap_or(0);
+    if sniff[..n].contains(&0u8) {
+        return vec![String::from("[binary file]")];
+    }
+    use std::io::Seek;
+    let _ = file.seek(io::SeekFrom::Start(0));
     io::BufReader::new(file)
         .lines()
         .take(max_lines)
