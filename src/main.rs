@@ -51,15 +51,27 @@ fn print_width(
     Ok(())
 }
 
-fn write_to_file(file_path: &str, content: &str) -> io::Result<()> {
-    let mut file = std::fs::File::create(file_path)?;
-    file.write_all(content.as_bytes())?;
-    Ok(())
-}
 
 fn get_cwd() -> io::Result<String> {
     let path = std::env::current_dir()?;
     Ok(path.to_string_lossy().into_owned())
+}
+
+fn get_ppid() -> Option<u32> {
+    let content = std::fs::read_to_string("/proc/self/status").ok()?;
+    for line in content.lines() {
+        if let Some(rest) = line.strip_prefix("PPid:") {
+            return rest.trim().parse().ok();
+        }
+    }
+    None
+}
+
+fn output_path() -> String {
+    match get_ppid() {
+        Some(ppid) => format!("/tmp/directory-switcher-{ppid}"),
+        None => String::from("/tmp/directory-switcher"),
+    }
 }
 
 fn try_cd(path: &PathBuf) -> io::Result<()> {
@@ -614,6 +626,8 @@ fn main() -> Result<(), io::Error> {
     write!(stderr, "{}{}\x1b[?1049l", cursor::Show, clear::All)?;
     stderr.flush()?;
 
-    write_to_file("/tmp/directory-switcher", &get_cwd()?)?;
+    let out = output_path();
+    let mut file = std::fs::File::create(&out)?;
+    file.write_all(get_cwd()?.as_bytes())?;
     Ok(())
 }
