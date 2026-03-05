@@ -651,13 +651,17 @@ fn main() -> Result<(), io::Error> {
                 let files = get_filtered_files(show_hidden, sort_mode, &filter)?;
                 let idx = usize::try_from(index.max(0)).expect("Invalid index");
                 if idx < files.len() {
-                    if files[idx].path.is_dir() {
-                        try_cd(&files[idx].path)?;
-                        filter.clear();
-                        index = 0;
-                        scroll_offset = 0;
-                    } else {
-                        stderr = open_in_editor(stderr, &files[idx].path)?;
+                    match files[idx].path.metadata() {
+                        Ok(m) if m.is_dir() => {
+                            try_cd(&files[idx].path)?;
+                            filter.clear();
+                            index = 0;
+                            scroll_offset = 0;
+                        }
+                        Ok(_) => {
+                            stderr = open_in_editor(stderr, &files[idx].path)?;
+                        }
+                        Err(_) => {}
                     }
                 }
             }
@@ -695,8 +699,12 @@ fn main() -> Result<(), io::Error> {
             b'o' if !filter_mode => {
                 let files = get_filtered_files(show_hidden, sort_mode, &filter)?;
                 let idx = usize::try_from(index.max(0)).expect("Invalid index");
-                if idx < files.len() && !files[idx].path.is_dir() {
-                    stderr = open_in_editor(stderr, &files[idx].path)?;
+                if idx < files.len() {
+                    if let Ok(m) = files[idx].path.metadata() {
+                        if !m.is_dir() {
+                            stderr = open_in_editor(stderr, &files[idx].path)?;
+                        }
+                    }
                 }
             }
             b'/' if !filter_mode => {
