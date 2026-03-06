@@ -524,6 +524,7 @@ fn render(
             ("h / l", "parent / child dir"),
             ("g / G", "first / last entry"),
             ("^D / ^U", "half page down / up"),
+            ("~", "go to $HOME"),
             (".", "toggle hidden files"),
             ("/ <text>", "filter entries"),
             ("s", "cycle sort (name/size/mtime)"),
@@ -651,6 +652,14 @@ fn main() -> Result<(), io::Error> {
             b'?' if !filter_mode => help_mode = !help_mode,
             b'g' if !filter_mode => index = 0,
             b'G' if !filter_mode => index = i32::MAX,
+            b'~' if !filter_mode => {
+                if let Some(home) = std::env::var_os("HOME") {
+                    try_cd(&PathBuf::from(home))?;
+                    filter.clear();
+                    index = 0;
+                    scroll_offset = 0;
+                }
+            }
             b'l' | 0x0d if !filter_mode => {
                 let files = get_filtered_files(show_hidden, sort_mode, &filter)?;
                 let idx = usize::try_from(index.max(0)).expect("Invalid index");
