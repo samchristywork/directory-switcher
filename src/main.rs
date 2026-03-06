@@ -409,10 +409,14 @@ fn render(
     } else {
         format!("{}/{}", index + 1, total)
     };
+    let hidden_tag = if show_hidden { "  [hidden]" } else { "" };
     let header = if sort_mode == SortMode::Name {
-        format!("{current_dir}  {count_str}")
+        format!("{current_dir}{hidden_tag}  {count_str}")
     } else {
-        format!("{current_dir}  [{}]  {count_str}", sort_mode.label())
+        format!(
+            "{current_dir}{hidden_tag}  [{}]  {count_str}",
+            sort_mode.label()
+        )
     };
 
     let pane_y: u16 = 2;
