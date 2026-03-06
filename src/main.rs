@@ -576,7 +576,27 @@ fn render(
                 )?;
             }
             None => {
-                let preview = read_file_preview(&selected.path, (height - pane_y) as usize);
+                let max_lines = (height - pane_y) as usize;
+                let is_symlink = selected
+                    .path
+                    .symlink_metadata()
+                    .map(|m| m.file_type().is_symlink())
+                    .unwrap_or(false);
+                let preview: Vec<String> = if is_symlink {
+                    let header = match std::fs::read_link(&selected.path) {
+                        Ok(target) => {
+                            let broken = !selected.path.exists();
+                            let suffix = if broken { " [broken]" } else { "" };
+                            format!("-> {}{}", target.to_string_lossy(), suffix)
+                        }
+                        Err(_) => String::from("-> [unreadable]"),
+                    };
+                    let mut lines = vec![header];
+                    lines.extend(read_file_preview(&selected.path, max_lines - 1));
+                    lines
+                } else {
+                    read_file_preview(&selected.path, max_lines)
+                };
                 for i in 0..(height - pane_y) {
                     let content = preview.get(i as usize).map(|s| s.as_str()).unwrap_or("");
                     print_width(
