@@ -516,10 +516,10 @@ fn render(
 
     if help_mode {
         let keys: &[(&str, &str)] = &[
-            ("j / k", "move down / up"),
-            ("h / l", "parent / child dir"),
+            ("j/k  ↑/↓", "move down / up"),
+            ("h/l  ←/→", "parent / child dir"),
             ("g / G", "first / last entry"),
-            ("^D / ^U", "half page down / up"),
+            ("^D/^U PgDn/PgUp", "half page down / up"),
             ("~", "go to $HOME"),
             (".", "toggle hidden files"),
             ("/ <text>", "filter entries"),
@@ -634,21 +634,28 @@ fn main() -> Result<(), io::Error> {
         help_mode,
     )?;
 
-    for byte in io::stdin().bytes() {
+    let stdin = io::stdin();
+    let mut stdin = stdin.lock();
+    let mut buf = [0u8; 6];
+    loop {
+        let n = match stdin.read(&mut buf) {
+            Ok(0) | Err(_) => break,
+            Ok(n) => n,
+        };
         let half_page = {
             let (_, h) = terminal_size()?;
             (h.saturating_sub(2) as i32) / 2
         };
-        match byte? {
-            b'q' if !filter_mode => break,
-            b'j' if !filter_mode => index += 1,
-            b'k' if !filter_mode => index -= 1,
-            0x04 if !filter_mode => index += half_page,
-            0x15 if !filter_mode => index -= half_page,
-            b'?' if !filter_mode => help_mode = !help_mode,
-            b'g' if !filter_mode => index = 0,
-            b'G' if !filter_mode => index = i32::MAX,
-            b'~' if !filter_mode => {
+        match &buf[..n] {
+            [b'q'] if !filter_mode => break,
+            [b'j'] | [0x1b, b'[', b'B'] if !filter_mode => index += 1,
+            [b'k'] | [0x1b, b'[', b'A'] if !filter_mode => index -= 1,
+            [0x04] | [0x1b, b'[', b'6', b'~'] if !filter_mode => index += half_page,
+            [0x15] | [0x1b, b'[', b'5', b'~'] if !filter_mode => index -= half_page,
+            [b'?'] if !filter_mode => help_mode = !help_mode,
+            [b'g'] if !filter_mode => index = 0,
+            [b'G'] if !filter_mode => index = i32::MAX,
+            [b'~'] if !filter_mode => {
                 if let Some(home) = std::env::var_os("HOME") {
                     try_cd(&PathBuf::from(home))?;
                     filter.clear();
@@ -656,7 +663,7 @@ fn main() -> Result<(), io::Error> {
                     scroll_offset = 0;
                 }
             }
-            b'l' | 0x0d if !filter_mode => {
+            [b'l'] | [b'\r'] | [0x1b, b'[', b'C'] if !filter_mode => {
                 let files = get_filtered_files(show_hidden, sort_mode, &filter)?;
                 let idx = usize::try_from(index.max(0)).expect("Invalid index");
                 if idx < files.len() {
@@ -674,7 +681,7 @@ fn main() -> Result<(), io::Error> {
                     }
                 }
             }
-            b'h' if !filter_mode => {
+            [b'h'] | [0x1b, b'[', b'D'] if !filter_mode => {
                 let cwd = get_cwd()?;
                 if cwd != "/" {
                     let old_dir = std::path::Path::new(&cwd)
@@ -695,17 +702,17 @@ fn main() -> Result<(), io::Error> {
                     }
                 }
             }
-            b'.' if !filter_mode => {
+            [b'.'] if !filter_mode => {
                 show_hidden = !show_hidden;
                 index = 0;
                 scroll_offset = 0;
             }
-            b's' if !filter_mode => {
+            [b's'] if !filter_mode => {
                 sort_mode = sort_mode.cycle();
                 index = 0;
                 scroll_offset = 0;
             }
-            b'o' if !filter_mode => {
+            [b'o'] if !filter_mode => {
                 let files = get_filtered_files(show_hidden, sort_mode, &filter)?;
                 let idx = usize::try_from(index.max(0)).expect("Invalid index");
                 if idx < files.len() {
@@ -716,28 +723,28 @@ fn main() -> Result<(), io::Error> {
                     }
                 }
             }
-            b'/' if !filter_mode => {
+            [b'/'] if !filter_mode => {
                 filter_mode = true;
                 filter.clear();
                 index = 0;
                 scroll_offset = 0;
             }
-            0x1b if filter_mode => {
+            [0x1b] if filter_mode => {
                 filter_mode = false;
                 filter.clear();
                 index = 0;
                 scroll_offset = 0;
             }
-            0x0d if filter_mode => {
+            [b'\r'] if filter_mode => {
                 filter_mode = false;
             }
-            0x7f if filter_mode => {
+            [0x7f] if filter_mode => {
                 filter.pop();
                 index = 0;
                 scroll_offset = 0;
             }
-            b if filter_mode && (0x20..=0x7e).contains(&b) => {
-                filter.push(b as char);
+            [b] if filter_mode && (0x20u8..=0x7eu8).contains(b) => {
+                filter.push(*b as char);
                 index = 0;
                 scroll_offset = 0;
             }
