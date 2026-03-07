@@ -2,7 +2,7 @@
 
 binary="$(readlink -f "$(dirname "$0")/../target/release/directory-switcher")"
 config_file=~/.bashrc
-alias_line="alias ds='${binary} && cd \"\$(cat /tmp/directory-switcher-\$\$ 2>/dev/null)\"'"
+alias_line="alias ds='${binary} && cd \"\$(cat /tmp/directory-switcher-\$\$ 2>/dev/null)\" ; rm -f /tmp/directory-switcher-\$\$'"
 
 if grep -qF "alias ds" "$config_file" 2>/dev/null; then
     echo "ds alias already present in $config_file"

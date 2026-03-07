@@ -19,6 +19,6 @@ case "$shell" in
     *)
         echo "Unknown shell '$shell'. Add the alias manually:"
         binary="$(pwd)/target/release/directory-switcher"
-        echo "  alias ds='${binary} && cd \"\$(cat /tmp/directory-switcher-\$\$ 2>/dev/null)\"'"
+        echo "  alias ds='${binary} && cd \"\$(cat /tmp/directory-switcher-\$\$ 2>/dev/null)\" ; rm -f /tmp/directory-switcher-\$\$'"
         ;;
 esac
