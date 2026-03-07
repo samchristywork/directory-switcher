@@ -164,7 +164,7 @@ fn open_in_editor(
     mut stderr: RawTerminal<io::Stderr>,
     path: &PathBuf,
 ) -> io::Result<RawTerminal<io::Stderr>> {
-    write!(stderr, "\x1b[?1049l")?;
+    write!(stderr, "\x1b[?1000l\x1b[?1049l")?;
     stderr.flush()?;
     drop(stderr);
     let editor = std::env::var("EDITOR").unwrap_or_else(|_| String::from("xdg-open"));
@@ -172,7 +172,7 @@ fn open_in_editor(
     let mut stderr = io::stderr().into_raw_mode()?;
     write!(
         stderr,
-        "\x1b[?1049h{}{}{}",
+        "\x1b[?1049h\x1b[?1000h{}{}{}",
         clear::All,
         cursor::Hide,
         cursor::Goto(1, 1)
@@ -655,7 +655,7 @@ fn main() -> Result<(), io::Error> {
     let mut last_term_size = terminal_size()?;
     write!(
         stderr,
-        "\x1b[?1049h{}{}{}",
+        "\x1b[?1049h\x1b[?1000h{}{}{}",
         clear::All,
         cursor::Hide,
         cursor::Goto(1, 1)
@@ -786,6 +786,64 @@ fn main() -> Result<(), io::Error> {
                 index = 0;
                 scroll_offset = 0;
             }
+            [0x1b, b'[', b'M', cb, cx, cy] => {
+                let button = cb.wrapping_sub(32);
+                let col = (*cx as u16).saturating_sub(32);
+                let row = (*cy as u16).saturating_sub(32);
+                let (width, _) = terminal_size()?;
+                let pane_width = width / 3;
+                match button {
+                    0 if row >= 3 => {
+                        let entry_row = (row - 3) as i32 + scroll_offset;
+                        if col >= 1 && col <= pane_width {
+                            let cwd = get_cwd()?;
+                            if cwd != "/" {
+                                let old_dir = std::path::Path::new(&cwd)
+                                    .file_name()
+                                    .and_then(|n| n.to_str())
+                                    .unwrap_or("")
+                                    .to_string();
+                                try_cd(&PathBuf::from(".."))?;
+                                filter.clear();
+                                scroll_offset = 0;
+                                let files = get_file_names(".", show_hidden, sort_mode)?;
+                                index = 0;
+                                for (i, f) in files.iter().enumerate() {
+                                    if f.name == old_dir {
+                                        index = i32::try_from(i).expect("Invalid index");
+                                        break;
+                                    }
+                                }
+                            }
+                        } else if col > pane_width && col <= 2 * pane_width {
+                            let files = get_filtered_files(show_hidden, sort_mode, &filter)?;
+                            if entry_row >= 0 && (entry_row as usize) < files.len() {
+                                index = entry_row;
+                            }
+                        } else if col > 2 * pane_width {
+                            let files = get_filtered_files(show_hidden, sort_mode, &filter)?;
+                            let idx = usize::try_from(index.max(0)).expect("Invalid index");
+                            if idx < files.len() {
+                                match files[idx].path.metadata() {
+                                    Ok(m) if m.is_dir() => {
+                                        try_cd(&files[idx].path)?;
+                                        filter.clear();
+                                        index = 0;
+                                        scroll_offset = 0;
+                                    }
+                                    Ok(_) => {
+                                        stderr = open_in_editor(stderr, &files[idx].path)?;
+                                    }
+                                    Err(_) => {}
+                                }
+                            }
+                        }
+                    }
+                    64 => index -= 3,
+                    65 => index += 3,
+                    _ => {}
+                }
+            }
             bytes if filter_mode => {
                 if let Ok(s) = std::str::from_utf8(bytes) {
                     let added: String = s.chars().filter(|c| !c.is_control()).collect();
@@ -853,7 +911,12 @@ fn main() -> Result<(), io::Error> {
         )?;
     }
 
-    write!(stderr, "{}{}\x1b[?1049l", cursor::Show, clear::All)?;
+    write!(
+        stderr,
+        "{}{}\x1b[?1000l\x1b[?1049l",
+        cursor::Show,
+        clear::All
+    )?;
     stderr.flush()?;
 
     let out = output_path();
