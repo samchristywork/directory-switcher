@@ -262,6 +262,31 @@ fn read_file_preview(path: &PathBuf, max_lines: usize) -> Vec<String> {
         .collect()
 }
 
+fn compute_preview(path: &PathBuf) -> Vec<String> {
+    if path.is_dir() {
+        return vec![];
+    }
+    let is_symlink = path
+        .symlink_metadata()
+        .map(|m| m.file_type().is_symlink())
+        .unwrap_or(false);
+    if is_symlink {
+        let header = match std::fs::read_link(path) {
+            Ok(target) => {
+                let broken = !path.exists();
+                let suffix = if broken { " [broken]" } else { "" };
+                format!("-> {}{}", target.to_string_lossy(), suffix)
+            }
+            Err(_) => String::from("-> [unreadable]"),
+        };
+        let mut lines = vec![header];
+        lines.extend(read_file_preview(path, 500));
+        lines
+    } else {
+        read_file_preview(path, 500)
+    }
+}
+
 fn format_permissions(mode: u32) -> String {
     let ft = match mode & 0o170000 {
         0o040000 => 'd',
@@ -378,6 +403,7 @@ fn render(
     scroll_offset: i32,
     file_info: &str,
     help_mode: bool,
+    preview: &[String],
 ) -> io::Result<()> {
     let current_dir = get_cwd()?;
 
@@ -585,27 +611,6 @@ fn render(
                 )?;
             }
             None => {
-                let max_lines = (height - pane_y) as usize;
-                let is_symlink = selected
-                    .path
-                    .symlink_metadata()
-                    .map(|m| m.file_type().is_symlink())
-                    .unwrap_or(false);
-                let preview: Vec<String> = if is_symlink {
-                    let header = match std::fs::read_link(&selected.path) {
-                        Ok(target) => {
-                            let broken = !selected.path.exists();
-                            let suffix = if broken { " [broken]" } else { "" };
-                            format!("-> {}{}", target.to_string_lossy(), suffix)
-                        }
-                        Err(_) => String::from("-> [unreadable]"),
-                    };
-                    let mut lines = vec![header];
-                    lines.extend(read_file_preview(&selected.path, max_lines - 1));
-                    lines
-                } else {
-                    read_file_preview(&selected.path, max_lines)
-                };
                 for i in 0..(height - pane_y) {
                     let content = preview.get(i as usize).map(|s| s.as_str()).unwrap_or("");
                     print_width(
@@ -634,12 +639,15 @@ fn main() -> Result<(), io::Error> {
     let mut filter_mode = false;
     let mut sort_mode = SortMode::Name;
     let mut help_mode = false;
-    let mut file_info_cache: (PathBuf, String) = {
+    let (mut file_info_cache, mut preview_cache): ((PathBuf, String), (PathBuf, Vec<String>)) = {
         let files = get_file_names(".", show_hidden, sort_mode)?;
         if let Some(entry) = files.first() {
-            (entry.path.clone(), file_stdout(&entry.name))
+            (
+                (entry.path.clone(), file_stdout(&entry.name)),
+                (entry.path.clone(), compute_preview(&entry.path)),
+            )
         } else {
-            (PathBuf::new(), String::new())
+            ((PathBuf::new(), String::new()), (PathBuf::new(), vec![]))
         }
     };
     let mut last_term_size = terminal_size()?;
@@ -661,6 +669,7 @@ fn main() -> Result<(), io::Error> {
         scroll_offset,
         &file_info_cache.1,
         help_mode,
+        &preview_cache.1,
     )?;
 
     let stdin = io::stdin();
@@ -818,7 +827,11 @@ fn main() -> Result<(), io::Error> {
                 .get(usize::try_from(index.max(0)).expect("Invalid index"))
                 .map(|f| f.name.as_str())
                 .unwrap_or("");
-            file_info_cache = (selected_path, file_stdout(name));
+            file_info_cache = (selected_path.clone(), file_stdout(name));
+        }
+        if selected_path != preview_cache.0 {
+            let preview = compute_preview(&selected_path);
+            preview_cache = (selected_path, preview);
         }
 
         render(
@@ -831,6 +844,7 @@ fn main() -> Result<(), io::Error> {
             scroll_offset,
             &file_info_cache.1,
             help_mode,
+            &preview_cache.1,
         )?;
     }
 
