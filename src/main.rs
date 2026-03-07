@@ -254,7 +254,9 @@ fn read_file_preview(path: &PathBuf, max_lines: usize) -> Vec<String> {
         return vec![String::from("[binary file]")];
     }
     use std::io::Seek;
-    let _ = file.seek(io::SeekFrom::Start(0));
+    if file.seek(io::SeekFrom::Start(0)).is_err() {
+        return vec![];
+    }
     io::BufReader::new(file)
         .lines()
         .take(max_lines)
