@@ -772,10 +772,15 @@ fn main() -> Result<(), io::Error> {
                 index = 0;
                 scroll_offset = 0;
             }
-            [b] if filter_mode && (0x20u8..=0x7eu8).contains(b) => {
-                filter.push(*b as char);
-                index = 0;
-                scroll_offset = 0;
+            bytes if filter_mode => {
+                if let Ok(s) = std::str::from_utf8(bytes) {
+                    let added: String = s.chars().filter(|c| !c.is_control()).collect();
+                    if !added.is_empty() {
+                        filter.push_str(&added);
+                        index = 0;
+                        scroll_offset = 0;
+                    }
+                }
             }
             _ => {}
         }
