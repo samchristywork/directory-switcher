@@ -694,7 +694,10 @@ fn main() -> Result<(), io::Error> {
             [0x15] | [0x1b, b'[', b'5', b'~'] if !filter_mode => index -= half_page,
             [b'?'] if !filter_mode => help_mode = !help_mode,
             [b'g'] if !filter_mode => index = 0,
-            [b'G'] if !filter_mode => index = i32::MAX,
+            [b'G'] if !filter_mode => {
+                let n = get_filtered_files(show_hidden, sort_mode, &filter)?.len();
+                index = n.saturating_sub(1) as i32;
+            }
             [b'~'] if !filter_mode => {
                 if let Some(home) = std::env::var_os("HOME") {
                     try_cd(&PathBuf::from(home))?;
