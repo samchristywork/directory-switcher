@@ -7,6 +7,7 @@ use termion::{
     raw::{IntoRawMode, RawTerminal},
     terminal_size,
 };
+use unicode_width::UnicodeWidthChar;
 
 #[derive(Clone, Copy, PartialEq)]
 enum SortMode {
@@ -48,9 +49,17 @@ fn print_width(
     content: &str,
 ) -> io::Result<()> {
     write!(stderr, "{}", cursor::Goto(x, y))?;
-    let line: String = content.chars().take(width as usize).collect();
-    let n = width - u16::try_from(line.chars().count()).expect("Invalid length");
-    let blank_space = " ".repeat(n as usize);
+    let mut line = String::new();
+    let mut display_cols: u16 = 0;
+    for ch in content.chars() {
+        let ch_cols = UnicodeWidthChar::width(ch).unwrap_or(0) as u16;
+        if display_cols + ch_cols > width {
+            break;
+        }
+        line.push(ch);
+        display_cols += ch_cols;
+    }
+    let blank_space = " ".repeat((width - display_cols) as usize);
     write!(stderr, "{color}{line}{blank_space}\x1b[0m")?;
     Ok(())
 }
