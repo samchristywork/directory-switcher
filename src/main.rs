@@ -11,9 +11,14 @@ use termion::{
 use unicode_width::UnicodeWidthChar;
 
 static SIGINT_RECEIVED: AtomicBool = AtomicBool::new(false);
+static SIGWINCH_RECEIVED: AtomicBool = AtomicBool::new(false);
 
 extern "C" fn handle_sigint(_: libc::c_int) {
     SIGINT_RECEIVED.store(true, Ordering::Relaxed);
+}
+
+extern "C" fn handle_sigwinch(_: libc::c_int) {
+    SIGWINCH_RECEIVED.store(true, Ordering::Relaxed);
 }
 
 #[derive(Clone, Copy, PartialEq)]
@@ -761,6 +766,9 @@ fn main() -> Result<(), io::Error> {
         let mut sa: libc::sigaction = std::mem::zeroed();
         sa.sa_sigaction = handle_sigint as libc::sighandler_t;
         libc::sigaction(libc::SIGINT, &sa, std::ptr::null_mut());
+        let mut sa_winch: libc::sigaction = std::mem::zeroed();
+        sa_winch.sa_sigaction = handle_sigwinch as libc::sighandler_t;
+        libc::sigaction(libc::SIGWINCH, &sa_winch, std::ptr::null_mut());
     }
     let mut stderr = io::stderr().into_raw_mode()?;
     let mut index = 0;
@@ -812,6 +820,26 @@ fn main() -> Result<(), io::Error> {
         let has_input = loop {
             if SIGINT_RECEIVED.load(Ordering::Relaxed) {
                 break 'main;
+            }
+            if SIGWINCH_RECEIVED.swap(false, Ordering::Relaxed) {
+                let term_size = terminal_size()?;
+                if term_size != last_term_size {
+                    last_term_size = term_size;
+                    write!(stderr, "{}", clear::All)?;
+                }
+                render(
+                    &mut stderr,
+                    index,
+                    show_hidden,
+                    &filter,
+                    filter_mode,
+                    sort_mode,
+                    scroll_offset,
+                    &file_info_cache.1,
+                    help_mode,
+                    &preview_cache.1,
+                )?;
+                continue 'main;
             }
             let mut pfd = libc::pollfd {
                 fd: 0,
