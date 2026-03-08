@@ -2,12 +2,19 @@ use std::cmp::Reverse;
 use std::io::{self, BufRead, Read, Write};
 use std::os::unix::fs::MetadataExt;
 use std::path::PathBuf;
+use std::sync::atomic::{AtomicBool, Ordering};
 use termion::{
     clear, cursor,
     raw::{IntoRawMode, RawTerminal},
     terminal_size,
 };
 use unicode_width::UnicodeWidthChar;
+
+static SIGINT_RECEIVED: AtomicBool = AtomicBool::new(false);
+
+extern "C" fn handle_sigint(_: libc::c_int) {
+    SIGINT_RECEIVED.store(true, Ordering::Relaxed);
+}
 
 #[derive(Clone, Copy, PartialEq)]
 enum SortMode {
@@ -750,6 +757,11 @@ fn render(
 }
 
 fn main() -> Result<(), io::Error> {
+    unsafe {
+        let mut sa: libc::sigaction = std::mem::zeroed();
+        sa.sa_sigaction = handle_sigint as libc::sighandler_t;
+        libc::sigaction(libc::SIGINT, &sa, std::ptr::null_mut());
+    }
     let mut stderr = io::stderr().into_raw_mode()?;
     let mut index = 0;
     let mut scroll_offset: i32 = 0;
@@ -796,7 +808,27 @@ fn main() -> Result<(), io::Error> {
     let stdin = io::stdin();
     let mut stdin = stdin.lock();
     let mut buf = [0u8; 6];
-    loop {
+    'main: loop {
+        let has_input = loop {
+            if SIGINT_RECEIVED.load(Ordering::Relaxed) {
+                break 'main;
+            }
+            let mut pfd = libc::pollfd {
+                fd: 0,
+                events: libc::POLLIN,
+                revents: 0,
+            };
+            let ret = unsafe { libc::poll(&mut pfd, 1, 100) };
+            if ret > 0 {
+                break true;
+            }
+            if ret < 0 && io::Error::last_os_error().kind() != io::ErrorKind::Interrupted {
+                break false;
+            }
+        };
+        if !has_input {
+            break;
+        }
         let n = match stdin.read(&mut buf) {
             Ok(0) | Err(_) => break,
             Ok(n) => n,
@@ -806,6 +838,7 @@ fn main() -> Result<(), io::Error> {
             (h.saturating_sub(2) as i32) / 2
         };
         match &buf[..n] {
+            [0x03] => break,
             [b'q'] if !filter_mode => break,
             [b'j'] | [0x1b, b'[', b'B'] if !filter_mode => index += 1,
             [b'k'] | [0x1b, b'[', b'A'] if !filter_mode => index -= 1,
