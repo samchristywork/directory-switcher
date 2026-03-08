@@ -536,6 +536,9 @@ fn render(
         .unwrap_or(-1);
 
     let (width, height) = terminal_size()?;
+    if width < 6 || height < 3 {
+        return Ok(());
+    }
     let pane_width = width / 3;
     let content_width = pane_width.saturating_sub(1);
 
@@ -581,7 +584,7 @@ fn render(
             par_files,
             false,
             content_width,
-            height - pane_y,
+            height.saturating_sub(pane_y),
             None,
         )?;
         render_pane(
@@ -592,7 +595,7 @@ fn render(
             &[],
             false,
             content_width,
-            height - pane_y,
+            height.saturating_sub(pane_y),
             None,
         )?;
         render_pane(
@@ -603,7 +606,7 @@ fn render(
             &[],
             false,
             content_width,
-            height - pane_y,
+            height.saturating_sub(pane_y),
             None,
         )?;
         stderr.flush()?;
@@ -648,7 +651,7 @@ fn render(
         par_files,
         false,
         content_width,
-        height - pane_y,
+        height.saturating_sub(pane_y),
         None,
     )?;
     render_pane(
@@ -659,7 +662,7 @@ fn render(
         mid_files,
         false,
         content_width,
-        height - pane_y,
+        height.saturating_sub(pane_y),
         if filter.is_empty() {
             None
         } else {
@@ -694,7 +697,7 @@ fn render(
                 &line,
             )?;
         }
-        for i in keys.len() as u16..(height - pane_y) {
+        for i in keys.len() as u16..(height.saturating_sub(pane_y)) {
             print_width(
                 stderr,
                 2 * width / 3 + 1,
@@ -724,7 +727,7 @@ fn render(
                     entries,
                     false,
                     content_width,
-                    (height - pane_y).saturating_sub(1),
+                    (height.saturating_sub(pane_y)).saturating_sub(1),
                     None,
                 )?;
             }
@@ -737,12 +740,12 @@ fn render(
                     &[],
                     true,
                     content_width,
-                    height - pane_y,
+                    height.saturating_sub(pane_y),
                     None,
                 )?;
             }
             None => {
-                for i in 0..(height - pane_y) {
+                for i in 0..(height.saturating_sub(pane_y)) {
                     let content = preview.get(i as usize).map(|s| s.as_str()).unwrap_or("");
                     print_width(
                         stderr,
