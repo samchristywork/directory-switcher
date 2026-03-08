@@ -999,22 +999,30 @@ fn main() -> Result<(), io::Error> {
                         if col >= 1 && col <= pane_width {
                             let cwd = get_cwd()?;
                             if cwd != "/" {
-                                let old_dir = std::path::Path::new(&cwd)
+                                let (_, h) = terminal_size()?;
+                                let par_files = get_file_names("..", show_hidden, sort_mode)?;
+                                let cur_name = std::path::Path::new(&cwd)
                                     .file_name()
                                     .and_then(|n| n.to_str())
                                     .unwrap_or("")
                                     .to_string();
+                                let par_idx = par_files
+                                    .iter()
+                                    .position(|f| f.name == cur_name)
+                                    .and_then(|i| i32::try_from(i).ok())
+                                    .unwrap_or(-1);
+                                let ph = (h as i32).saturating_sub(2);
+                                let par_scroll = if par_idx > 0 {
+                                    ((par_idx - ph / 2).max(0)) as usize
+                                } else {
+                                    0
+                                };
+                                let clicked = ((row - 3) as i32 + par_scroll as i32)
+                                    .clamp(0, par_files.len().saturating_sub(1) as i32);
                                 try_cd(&PathBuf::from(".."))?;
                                 filter.clear();
                                 scroll_offset = 0;
-                                let files = get_file_names(".", show_hidden, sort_mode)?;
-                                index = 0;
-                                for (i, f) in files.iter().enumerate() {
-                                    if f.name == old_dir {
-                                        index = i32::try_from(i).expect("Invalid index");
-                                        break;
-                                    }
-                                }
+                                index = clicked;
                             }
                         } else if col > pane_width && col <= 2 * pane_width {
                             let files = get_filtered_files(show_hidden, sort_mode, &filter)?;
