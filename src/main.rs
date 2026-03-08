@@ -906,7 +906,6 @@ fn main() -> Result<(), io::Error> {
             }
             [b'/'] if !filter_mode => {
                 filter_mode = true;
-                filter.clear();
                 index = 0;
                 scroll_offset = 0;
             }
