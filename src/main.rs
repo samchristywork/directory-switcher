@@ -589,15 +589,24 @@ fn render(
     } else {
         match child_file_names {
             Some(Ok(ref entries)) => {
+                let count_str = format!("{} items", entries.len());
+                print_width(
+                    stderr,
+                    2 * width / 3 + 1,
+                    pane_y + 1,
+                    content_width,
+                    "\x1b[2m",
+                    &count_str,
+                )?;
                 render_pane(
                     stderr,
                     2 * width / 3,
-                    pane_y,
+                    pane_y + 1,
                     -1,
                     entries,
                     false,
                     content_width,
-                    height - pane_y,
+                    (height - pane_y).saturating_sub(1),
                 )?;
             }
             Some(Err(_)) => {
