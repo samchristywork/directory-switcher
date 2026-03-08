@@ -64,6 +64,55 @@ fn print_width(
     Ok(())
 }
 
+fn take_cols(s: &str, available: u16) -> (&str, u16) {
+    let mut cols = 0u16;
+    for (i, ch) in s.char_indices() {
+        let w = UnicodeWidthChar::width(ch).unwrap_or(0) as u16;
+        if cols + w > available {
+            return (&s[..i], cols);
+        }
+        cols += w;
+    }
+    (s, cols)
+}
+
+fn print_width_highlighted(
+    stderr: &mut dyn Write,
+    x: u16,
+    y: u16,
+    max_cols: u16,
+    color: &str,
+    content: &str,
+    filter: &str,
+) -> io::Result<()> {
+    write!(stderr, "{}", cursor::Goto(x, y))?;
+    let lower_content = content.to_lowercase();
+    let lower_filter = filter.to_lowercase();
+    let (pre, mid, post) = if let Some(pos) = lower_content.find(&lower_filter) {
+        let end = pos + lower_filter.len();
+        if content.is_char_boundary(pos) && content.is_char_boundary(end) {
+            (&content[..pos], &content[pos..end], &content[end..])
+        } else {
+            (content, "", "")
+        }
+    } else {
+        (content, "", "")
+    };
+    let mut used = 0u16;
+    let (pre_s, pre_w) = take_cols(pre, max_cols);
+    used += pre_w;
+    let (mid_s, mid_w) = take_cols(mid, max_cols - used);
+    used += mid_w;
+    let (post_s, post_w) = take_cols(post, max_cols - used);
+    used += post_w;
+    let padding = " ".repeat((max_cols - used) as usize);
+    write!(
+        stderr,
+        "{color}{pre_s}\x1b[4m{mid_s}\x1b[0m{color}{post_s}{padding}\x1b[0m"
+    )?;
+    Ok(())
+}
+
 fn bookmarks_path() -> Option<PathBuf> {
     let home = std::env::var_os("HOME")?;
     let mut p = PathBuf::from(home);
@@ -223,6 +272,7 @@ fn render_pane(
     permission_denied: bool,
     width: u16,
     height: u16,
+    highlight: Option<&str>,
 ) -> io::Result<()> {
     if permission_denied {
         for i in 0..height {
@@ -264,14 +314,25 @@ fn render_pane(
             )?;
         } else {
             let file_info = &file_names[usize::try_from(i).expect("Invalid index")];
-            print_width(
-                stderr,
-                x,
-                y,
-                width,
-                file_info.color.as_str(),
-                &file_info.name,
-            )?;
+            match highlight {
+                Some(f) if !f.is_empty() => print_width_highlighted(
+                    stderr,
+                    x,
+                    y,
+                    width,
+                    file_info.color.as_str(),
+                    &file_info.name,
+                    f,
+                )?,
+                _ => print_width(
+                    stderr,
+                    x,
+                    y,
+                    width,
+                    file_info.color.as_str(),
+                    &file_info.name,
+                )?,
+            }
         }
     }
 
@@ -509,6 +570,7 @@ fn render(
             false,
             content_width,
             height - pane_y,
+            None,
         )?;
         render_pane(
             stderr,
@@ -519,6 +581,7 @@ fn render(
             false,
             content_width,
             height - pane_y,
+            None,
         )?;
         render_pane(
             stderr,
@@ -529,6 +592,7 @@ fn render(
             false,
             content_width,
             height - pane_y,
+            None,
         )?;
         stderr.flush()?;
         return Ok(());
@@ -573,6 +637,7 @@ fn render(
         false,
         content_width,
         height - pane_y,
+        None,
     )?;
     render_pane(
         stderr,
@@ -583,6 +648,11 @@ fn render(
         false,
         content_width,
         height - pane_y,
+        if filter.is_empty() {
+            None
+        } else {
+            Some(filter)
+        },
     )?;
 
     if help_mode {
@@ -643,6 +713,7 @@ fn render(
                     false,
                     content_width,
                     (height - pane_y).saturating_sub(1),
+                    None,
                 )?;
             }
             Some(Err(_)) => {
@@ -655,6 +726,7 @@ fn render(
                     true,
                     content_width,
                     height - pane_y,
+                    None,
                 )?;
             }
             None => {
