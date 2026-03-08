@@ -64,6 +64,40 @@ fn print_width(
     Ok(())
 }
 
+fn bookmarks_path() -> Option<PathBuf> {
+    let home = std::env::var_os("HOME")?;
+    let mut p = PathBuf::from(home);
+    p.push(".local/share/directory-switcher/bookmarks");
+    Some(p)
+}
+
+fn load_bookmarks() -> Vec<PathBuf> {
+    let Some(path) = bookmarks_path() else {
+        return vec![];
+    };
+    let Ok(content) = std::fs::read_to_string(path) else {
+        return vec![];
+    };
+    content
+        .lines()
+        .filter(|l| !l.is_empty())
+        .map(PathBuf::from)
+        .collect()
+}
+
+fn save_bookmarks(bookmarks: &[PathBuf]) {
+    let Some(path) = bookmarks_path() else { return };
+    if let Some(parent) = path.parent() {
+        let _ = std::fs::create_dir_all(parent);
+    }
+    let content = bookmarks
+        .iter()
+        .filter_map(|p| p.to_str())
+        .collect::<Vec<_>>()
+        .join("\n");
+    let _ = std::fs::write(path, content);
+}
+
 fn get_cwd() -> io::Result<String> {
     let path = std::env::current_dir()?;
     Ok(path.to_string_lossy().into_owned())
@@ -562,6 +596,8 @@ fn render(
             ("/ <text>", "filter entries"),
             ("s", "cycle sort (name/size/mtime)"),
             ("o", "open file in $EDITOR"),
+            ("m", "bookmark current dir"),
+            ("'", "jump to next bookmark"),
             ("?", "toggle this help"),
             ("q", "quit"),
         ];
@@ -650,6 +686,8 @@ fn main() -> Result<(), io::Error> {
     let mut filter_mode = false;
     let mut sort_mode = SortMode::Name;
     let mut help_mode = false;
+    let mut bookmarks = load_bookmarks();
+    let mut bookmark_index: usize = 0;
     let (mut file_info_cache, mut preview_cache): ((PathBuf, String), (PathBuf, Vec<String>)) = {
         let files = get_file_names(".", show_hidden, sort_mode)?;
         if let Some(entry) = files.first() {
@@ -751,6 +789,25 @@ fn main() -> Result<(), io::Error> {
                             index = i32::try_from(i).expect("Invalid index");
                             break;
                         }
+                    }
+                }
+            }
+            [b'm'] if !filter_mode => {
+                let cwd = PathBuf::from(get_cwd()?);
+                if !bookmarks.contains(&cwd) {
+                    bookmarks.push(cwd);
+                    save_bookmarks(&bookmarks);
+                }
+            }
+            [b'\''] if !filter_mode => {
+                if !bookmarks.is_empty() {
+                    let target = bookmarks[bookmark_index % bookmarks.len()].clone();
+                    bookmark_index = (bookmark_index + 1) % bookmarks.len();
+                    if target.is_dir() {
+                        try_cd(&target)?;
+                        filter.clear();
+                        index = 0;
+                        scroll_offset = 0;
                     }
                 }
             }
