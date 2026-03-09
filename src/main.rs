@@ -1071,7 +1071,9 @@ fn main() -> Result<(), io::Error> {
         }
 
         let filtered_files = get_filtered_files(show_hidden, sort_mode, &filter)?;
-        if index >= i32::try_from(filtered_files.len()).expect("Invalid index") {
+        if filtered_files.is_empty() {
+            index = 0;
+        } else if index >= i32::try_from(filtered_files.len()).expect("Invalid index") {
             index = i32::try_from(filtered_files.len()).expect("Invalid index") - 1;
         }
 
