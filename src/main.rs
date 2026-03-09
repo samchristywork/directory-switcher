@@ -956,15 +956,20 @@ fn main() -> Result<(), io::Error> {
                 }
             }
             [b'\''] if !filter_mode => {
+                let before = bookmarks.len();
+                bookmarks.retain(|b| b.is_dir());
+                if bookmarks.len() != before {
+                    save_bookmarks(&bookmarks);
+                    bookmark_index = bookmark_index.min(bookmarks.len().saturating_sub(1));
+                }
                 if !bookmarks.is_empty() {
-                    let target = bookmarks[bookmark_index % bookmarks.len()].clone();
+                    bookmark_index %= bookmarks.len();
+                    let target = bookmarks[bookmark_index].clone();
                     bookmark_index = (bookmark_index + 1) % bookmarks.len();
-                    if target.is_dir() {
-                        try_cd(&target)?;
-                        filter.clear();
-                        index = 0;
-                        scroll_offset = 0;
-                    }
+                    try_cd(&target)?;
+                    filter.clear();
+                    index = 0;
+                    scroll_offset = 0;
                 }
             }
             [b'.'] if !filter_mode => {
