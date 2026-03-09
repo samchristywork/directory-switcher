@@ -171,11 +171,14 @@ fn save_bookmarks(bookmarks: &[PathBuf]) {
     if let Some(parent) = path.parent() {
         let _ = std::fs::create_dir_all(parent);
     }
-    let content = bookmarks
+    let mut content = bookmarks
         .iter()
         .filter_map(|p| p.to_str())
         .collect::<Vec<_>>()
         .join("\n");
+    if !content.is_empty() {
+        content.push('\n');
+    }
     let _ = std::fs::write(path, content);
 }
 
