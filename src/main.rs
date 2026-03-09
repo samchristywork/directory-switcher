@@ -516,10 +516,10 @@ fn file_metadata_str(path: &PathBuf) -> String {
 }
 
 fn file_stdout(file_name: &str) -> String {
-    let Ok(output) = std::process::Command::new("file").arg(file_name).output() else {
-        return String::new();
-    };
-    String::from_utf8_lossy(&output.stdout).trim().to_string()
+    match std::process::Command::new("file").arg(file_name).output() {
+        Ok(output) => String::from_utf8_lossy(&output.stdout).trim().to_string(),
+        Err(_) => String::from("[file: command not found]"),
+    }
 }
 
 fn render(
