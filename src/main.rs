@@ -100,28 +100,48 @@ fn print_width_highlighted(
     write!(stderr, "{}", cursor::Goto(x, y))?;
     let lower_content = content.to_lowercase();
     let lower_filter = filter.to_lowercase();
-    let (pre, mid, post) = if let Some(pos) = lower_content.find(&lower_filter) {
-        let end = pos + lower_filter.len();
-        if content.is_char_boundary(pos) && content.is_char_boundary(end) {
-            (&content[..pos], &content[pos..end], &content[end..])
-        } else {
-            (content, "", "")
-        }
-    } else {
-        (content, "", "")
-    };
+    let filter_len = lower_filter.len();
+    let mut cursor_pos = 0usize;
     let mut used = 0u16;
-    let (pre_s, pre_w) = take_cols(pre, max_cols);
-    used += pre_w;
-    let (mid_s, mid_w) = take_cols(mid, max_cols - used);
-    used += mid_w;
-    let (post_s, post_w) = take_cols(post, max_cols - used);
-    used += post_w;
+    let mut output = String::new();
+
+    while cursor_pos <= content.len() && used < max_cols {
+        match lower_content[cursor_pos..].find(lower_filter.as_str()) {
+            None => {
+                let (s, w) = take_cols(&content[cursor_pos..], max_cols - used);
+                output.push_str(color);
+                output.push_str(s);
+                used += w;
+                break;
+            }
+            Some(rel_pos) => {
+                let abs_pos = cursor_pos + rel_pos;
+                let abs_end = abs_pos + filter_len;
+                if !content.is_char_boundary(abs_pos) || !content.is_char_boundary(abs_end) {
+                    let (s, w) = take_cols(&content[cursor_pos..], max_cols - used);
+                    output.push_str(color);
+                    output.push_str(s);
+                    used += w;
+                    break;
+                }
+                let (pre_s, pre_w) = take_cols(&content[cursor_pos..abs_pos], max_cols - used);
+                output.push_str(color);
+                output.push_str(pre_s);
+                used += pre_w;
+                if used < max_cols {
+                    let (mid_s, mid_w) = take_cols(&content[abs_pos..abs_end], max_cols - used);
+                    output.push_str("\x1b[4m");
+                    output.push_str(mid_s);
+                    output.push_str("\x1b[0m");
+                    used += mid_w;
+                }
+                cursor_pos = abs_end;
+            }
+        }
+    }
+
     let padding = " ".repeat((max_cols - used) as usize);
-    write!(
-        stderr,
-        "{color}{pre_s}\x1b[4m{mid_s}\x1b[0m{color}{post_s}{padding}\x1b[0m"
-    )?;
+    write!(stderr, "{output}{padding}\x1b[0m")?;
     Ok(())
 }
 
