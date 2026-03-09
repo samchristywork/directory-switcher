@@ -412,10 +412,10 @@ fn compute_preview(path: &PathBuf) -> Vec<String> {
             Err(_) => String::from("-> [unreadable]"),
         };
         let mut lines = vec![header];
-        lines.extend(read_file_preview(path, 500));
+        lines.extend(read_file_preview(path, 10000));
         lines
     } else {
-        read_file_preview(path, 500)
+        read_file_preview(path, 10000)
     }
 }
 
@@ -703,6 +703,7 @@ fn render(
             (".", "toggle hidden files"),
             ("/ <text>", "filter entries"),
             ("s", "cycle sort (name/size/mtime)"),
+            ("[/]", "scroll preview up/down"),
             ("o", "open file in $EDITOR"),
             ("m", "bookmark current dir"),
             ("'", "jump to next bookmark"),
@@ -806,6 +807,7 @@ fn main() -> Result<(), io::Error> {
     let mut help_mode = false;
     let mut bookmarks = load_bookmarks();
     let mut bookmark_index: usize = 0;
+    let mut preview_scroll: usize = 0;
     let (mut file_info_cache, mut preview_cache): ((PathBuf, String), (PathBuf, Vec<String>)) = {
         let files = get_file_names(".", show_hidden, sort_mode)?;
         if let Some(entry) = files.first() {
@@ -836,7 +838,7 @@ fn main() -> Result<(), io::Error> {
         scroll_offset,
         &file_info_cache.1,
         help_mode,
-        &preview_cache.1,
+        &preview_cache.1[preview_scroll.min(preview_cache.1.len())..],
     )?;
 
     let stdin = io::stdin();
@@ -863,7 +865,7 @@ fn main() -> Result<(), io::Error> {
                     scroll_offset,
                     &file_info_cache.1,
                     help_mode,
-                    &preview_cache.1,
+                    &preview_cache.1[preview_scroll.min(preview_cache.1.len())..],
                 )?;
                 continue 'main;
             }
@@ -974,6 +976,12 @@ fn main() -> Result<(), io::Error> {
                     index = 0;
                     scroll_offset = 0;
                 }
+            }
+            [b'['] if !filter_mode => {
+                preview_scroll = preview_scroll.saturating_sub(1);
+            }
+            [b']'] if !filter_mode => {
+                preview_scroll = preview_scroll.saturating_add(1);
             }
             [b'.'] if !filter_mode => {
                 show_hidden = !show_hidden;
@@ -1134,7 +1142,11 @@ fn main() -> Result<(), io::Error> {
         if selected_path != preview_cache.0 {
             let preview = compute_preview(&selected_path);
             preview_cache = (selected_path, preview);
+            preview_scroll = 0;
         }
+        let max_preview_scroll = preview_cache.1.len().saturating_sub(1);
+        preview_scroll = preview_scroll.min(max_preview_scroll);
+        let preview_slice = &preview_cache.1[preview_scroll.min(preview_cache.1.len())..];
 
         render(
             &mut stderr,
@@ -1146,7 +1158,7 @@ fn main() -> Result<(), io::Error> {
             scroll_offset,
             &file_info_cache.1,
             help_mode,
-            &preview_cache.1,
+            preview_slice,
         )?;
     }
 
