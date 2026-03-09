@@ -535,6 +535,8 @@ fn render(
     scroll_offset: i32,
     file_info: &str,
     help_mode: bool,
+    bookmark_mode: bool,
+    bookmarks: &[std::path::PathBuf],
     preview: &[String],
 ) -> io::Result<()> {
     let current_dir = get_cwd()?;
@@ -707,6 +709,7 @@ fn render(
             ("o", "open file in $EDITOR"),
             ("m / M", "add / remove bookmark"),
             ("'", "jump to next bookmark"),
+            ("B", "show bookmark list"),
             ("?", "toggle this help"),
             ("q", "quit"),
         ];
@@ -729,6 +732,34 @@ fn render(
                 content_width,
                 "",
                 "",
+            )?;
+        }
+    } else if bookmark_mode {
+        let header = format!("Bookmarks ({})", bookmarks.len());
+        print_width(
+            stderr,
+            2 * width / 3 + 1,
+            pane_y + 1,
+            content_width,
+            "\x1b[2m",
+            &header,
+        )?;
+        let list_height = height.saturating_sub(pane_y).saturating_sub(1);
+        for i in 0..list_height {
+            let (color, text) = if let Some(bm) = bookmarks.get(i as usize) {
+                let is_current = bm.as_os_str() == std::ffi::OsStr::new(&current_dir);
+                let c = if is_current { "\x1b[1;32m" } else { "\x1b[0m" };
+                (c, bm.to_string_lossy().into_owned())
+            } else {
+                ("", String::new())
+            };
+            print_width(
+                stderr,
+                2 * width / 3 + 1,
+                pane_y + 2 + i,
+                content_width,
+                color,
+                &text,
             )?;
         }
     } else {
@@ -805,6 +836,7 @@ fn main() -> Result<(), io::Error> {
     let mut filter_mode = false;
     let mut sort_mode = SortMode::Name;
     let mut help_mode = false;
+    let mut bookmark_mode = false;
     let mut bookmarks = load_bookmarks();
     let mut bookmark_index: usize = 0;
     let mut preview_scroll: usize = 0;
@@ -838,6 +870,8 @@ fn main() -> Result<(), io::Error> {
         scroll_offset,
         &file_info_cache.1,
         help_mode,
+        bookmark_mode,
+        &bookmarks,
         &preview_cache.1[preview_scroll.min(preview_cache.1.len())..],
     )?;
 
@@ -865,6 +899,8 @@ fn main() -> Result<(), io::Error> {
                     scroll_offset,
                     &file_info_cache.1,
                     help_mode,
+                    bookmark_mode,
+                    &bookmarks,
                     &preview_cache.1[preview_scroll.min(preview_cache.1.len())..],
                 )?;
                 continue 'main;
@@ -901,6 +937,7 @@ fn main() -> Result<(), io::Error> {
             [0x04] | [0x1b, b'[', b'6', b'~'] if !filter_mode => index += half_page,
             [0x15] | [0x1b, b'[', b'5', b'~'] if !filter_mode => index -= half_page,
             [b'?'] if !filter_mode => help_mode = !help_mode,
+            [b'B'] if !filter_mode => bookmark_mode = !bookmark_mode,
             [b'g'] if !filter_mode => index = 0,
             [b'G'] if !filter_mode => {
                 let n = get_filtered_files(show_hidden, sort_mode, &filter)?.len();
@@ -1167,6 +1204,8 @@ fn main() -> Result<(), io::Error> {
             scroll_offset,
             &file_info_cache.1,
             help_mode,
+            bookmark_mode,
+            &bookmarks,
             preview_slice,
         )?;
     }
