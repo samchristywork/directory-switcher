@@ -705,7 +705,7 @@ fn render(
             ("s", "cycle sort (name/size/mtime)"),
             ("[/]", "scroll preview up/down"),
             ("o", "open file in $EDITOR"),
-            ("m", "bookmark current dir"),
+            ("m / M", "add / remove bookmark"),
             ("'", "jump to next bookmark"),
             ("?", "toggle this help"),
             ("q", "quit"),
@@ -957,6 +957,15 @@ fn main() -> Result<(), io::Error> {
                 let cwd = PathBuf::from(get_cwd()?);
                 if !bookmarks.contains(&cwd) {
                     bookmarks.push(cwd);
+                    save_bookmarks(&bookmarks);
+                }
+            }
+            [b'M'] if !filter_mode => {
+                let cwd = PathBuf::from(get_cwd()?);
+                let before = bookmarks.len();
+                bookmarks.retain(|b| b != &cwd);
+                if bookmarks.len() != before {
+                    bookmark_index = bookmark_index.min(bookmarks.len().saturating_sub(1));
                     save_bookmarks(&bookmarks);
                 }
             }
