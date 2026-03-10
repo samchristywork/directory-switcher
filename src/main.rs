@@ -699,6 +699,7 @@ fn render(
         let keys: &[(&str, &str)] = &[
             ("j/k  ↑/↓", "move down / up"),
             ("h/l  ←/→", "parent / child dir"),
+            ("A-← / A-→", "back / forward history"),
             ("g / G", "first / last entry"),
             ("^D/^U PgDn/PgUp", "half page down / up"),
             ("~", "go to $HOME"),
@@ -837,6 +838,8 @@ fn main() -> Result<(), io::Error> {
     let mut sort_mode = SortMode::Name;
     let mut help_mode = false;
     let mut bookmark_mode = false;
+    let mut back_stack: Vec<(PathBuf, i32)> = Vec::new();
+    let mut forward_stack: Vec<(PathBuf, i32)> = Vec::new();
     let mut bookmarks = load_bookmarks();
     let mut bookmark_index: usize = 0;
     let mut preview_scroll: usize = 0;
@@ -934,6 +937,28 @@ fn main() -> Result<(), io::Error> {
             [b'q'] if !filter_mode => break,
             [b'j'] | [0x1b, b'[', b'B'] if !filter_mode => index += 1,
             [b'k'] | [0x1b, b'[', b'A'] if !filter_mode => index -= 1,
+            [0x1b, b'[', b'1', b';', b'3', b'D'] if !filter_mode => {
+                if let Some((target, saved_index)) = back_stack.pop() {
+                    let snap = PathBuf::from(get_cwd()?);
+                    forward_stack.push((snap, index));
+                    try_cd(&target)?;
+                    let n = get_filtered_files(show_hidden, sort_mode, "")?.len() as i32;
+                    index = saved_index.clamp(0, n.saturating_sub(1));
+                    filter.clear();
+                    scroll_offset = 0;
+                }
+            }
+            [0x1b, b'[', b'1', b';', b'3', b'C'] if !filter_mode => {
+                if let Some((target, saved_index)) = forward_stack.pop() {
+                    let snap = PathBuf::from(get_cwd()?);
+                    back_stack.push((snap, index));
+                    try_cd(&target)?;
+                    let n = get_filtered_files(show_hidden, sort_mode, "")?.len() as i32;
+                    index = saved_index.clamp(0, n.saturating_sub(1));
+                    filter.clear();
+                    scroll_offset = 0;
+                }
+            }
             [0x04] | [0x1b, b'[', b'6', b'~'] if !filter_mode => index += half_page,
             [0x15] | [0x1b, b'[', b'5', b'~'] if !filter_mode => index -= half_page,
             [b'?'] if !filter_mode => help_mode = !help_mode,
@@ -945,6 +970,8 @@ fn main() -> Result<(), io::Error> {
             }
             [b'~'] if !filter_mode => {
                 if let Some(home) = std::env::var_os("HOME") {
+                    back_stack.push((PathBuf::from(get_cwd()?), index));
+                    forward_stack.clear();
                     try_cd(&PathBuf::from(home))?;
                     filter.clear();
                     index = 0;
@@ -957,6 +984,8 @@ fn main() -> Result<(), io::Error> {
                 if idx < files.len() {
                     match files[idx].path.metadata() {
                         Ok(m) if m.is_dir() => {
+                            back_stack.push((PathBuf::from(get_cwd()?), index));
+                            forward_stack.clear();
                             try_cd(&files[idx].path)?;
                             filter.clear();
                             index = 0;
@@ -972,6 +1001,8 @@ fn main() -> Result<(), io::Error> {
             [b'h'] | [0x1b, b'[', b'D'] if !filter_mode => {
                 let cwd = get_cwd()?;
                 if cwd != "/" {
+                    back_stack.push((PathBuf::from(&cwd), index));
+                    forward_stack.clear();
                     let old_dir = std::path::Path::new(&cwd)
                         .file_name()
                         .and_then(|n| n.to_str())
@@ -1017,6 +1048,8 @@ fn main() -> Result<(), io::Error> {
                     bookmark_index %= bookmarks.len();
                     let target = bookmarks[bookmark_index].clone();
                     bookmark_index = (bookmark_index + 1) % bookmarks.len();
+                    back_stack.push((PathBuf::from(get_cwd()?), index));
+                    forward_stack.clear();
                     try_cd(&target)?;
                     filter.clear();
                     index = 0;
@@ -1101,6 +1134,8 @@ fn main() -> Result<(), io::Error> {
                                 };
                                 let clicked = ((row - 3) as i32 + par_scroll as i32)
                                     .clamp(0, par_files.len().saturating_sub(1) as i32);
+                                back_stack.push((PathBuf::from(&cwd), index));
+                                forward_stack.clear();
                                 try_cd(&PathBuf::from(".."))?;
                                 filter.clear();
                                 scroll_offset = 0;
@@ -1117,6 +1152,8 @@ fn main() -> Result<(), io::Error> {
                             if idx < files.len() {
                                 match files[idx].path.metadata() {
                                     Ok(m) if m.is_dir() => {
+                                        back_stack.push((PathBuf::from(get_cwd()?), index));
+                                        forward_stack.clear();
                                         try_cd(&files[idx].path)?;
                                         filter.clear();
                                         index = 0;
