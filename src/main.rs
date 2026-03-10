@@ -1126,6 +1126,24 @@ fn main() -> Result<(), io::Error> {
             }
             [b'\r'] if filter_mode => {
                 filter_mode = false;
+                let files = get_filtered_files(show_hidden, sort_mode, &filter)?;
+                let idx = usize::try_from(index.max(0)).expect("Invalid index");
+                if idx < files.len() {
+                    match files[idx].path.metadata() {
+                        Ok(m) if m.is_dir() => {
+                            back_stack.push((PathBuf::from(get_cwd()?), index));
+                            forward_stack.clear();
+                            try_cd(&files[idx].path)?;
+                            filter.clear();
+                            index = 0;
+                            scroll_offset = 0;
+                        }
+                        Ok(_) => {
+                            stderr = open_in_editor(stderr, &files[idx].path)?;
+                        }
+                        Err(_) => {}
+                    }
+                }
             }
             [0x7f] if filter_mode => {
                 filter.pop();
