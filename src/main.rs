@@ -850,7 +850,103 @@ fn render(
     Ok(())
 }
 
+struct KeyConfig {
+    quit: u8,
+    move_down: u8,
+    move_up: u8,
+    go_first: u8,
+    go_last: u8,
+    go_home: u8,
+    navigate_in: u8,
+    navigate_out: u8,
+    toggle_hidden: u8,
+    cycle_sort: u8,
+    open_editor: u8,
+    bookmark_add: u8,
+    bookmark_remove: u8,
+    bookmark_jump: u8,
+    bookmark_list: u8,
+    filter_start: u8,
+    help: u8,
+    preview_up: u8,
+    preview_down: u8,
+}
+
+impl Default for KeyConfig {
+    fn default() -> Self {
+        Self {
+            quit: b'q',
+            move_down: b'j',
+            move_up: b'k',
+            go_first: b'g',
+            go_last: b'G',
+            go_home: b'~',
+            navigate_in: b'l',
+            navigate_out: b'h',
+            toggle_hidden: b'.',
+            cycle_sort: b's',
+            open_editor: b'o',
+            bookmark_add: b'm',
+            bookmark_remove: b'M',
+            bookmark_jump: b'\'',
+            bookmark_list: b'B',
+            filter_start: b'/',
+            help: b'?',
+            preview_up: b'[',
+            preview_down: b']',
+        }
+    }
+}
+
+fn load_key_config() -> KeyConfig {
+    let mut kc = KeyConfig::default();
+    let home = std::env::var_os("HOME").unwrap_or_default();
+    let path = PathBuf::from(home).join(".config/directory-switcher/config");
+    let Ok(content) = std::fs::read_to_string(path) else {
+        return kc;
+    };
+    for line in content.lines() {
+        let line = line.trim();
+        if line.starts_with('#') || line.is_empty() {
+            continue;
+        }
+        let Some((name, val)) = line.split_once('=') else {
+            continue;
+        };
+        let val = val.trim();
+        let byte = if val.len() == 1 {
+            val.as_bytes()[0]
+        } else {
+            continue;
+        };
+        match name.trim() {
+            "quit" => kc.quit = byte,
+            "move_down" => kc.move_down = byte,
+            "move_up" => kc.move_up = byte,
+            "go_first" => kc.go_first = byte,
+            "go_last" => kc.go_last = byte,
+            "go_home" => kc.go_home = byte,
+            "navigate_in" => kc.navigate_in = byte,
+            "navigate_out" => kc.navigate_out = byte,
+            "toggle_hidden" => kc.toggle_hidden = byte,
+            "cycle_sort" => kc.cycle_sort = byte,
+            "open_editor" => kc.open_editor = byte,
+            "bookmark_add" => kc.bookmark_add = byte,
+            "bookmark_remove" => kc.bookmark_remove = byte,
+            "bookmark_jump" => kc.bookmark_jump = byte,
+            "bookmark_list" => kc.bookmark_list = byte,
+            "filter" => kc.filter_start = byte,
+            "help" => kc.help = byte,
+            "preview_up" => kc.preview_up = byte,
+            "preview_down" => kc.preview_down = byte,
+            _ => {}
+        }
+    }
+    kc
+}
+
 fn main() -> Result<(), io::Error> {
+    let kc = load_key_config();
     unsafe {
         let mut sa: libc::sigaction = std::mem::zeroed();
         sa.sa_sigaction = handle_sigint as libc::sighandler_t;
@@ -964,9 +1060,11 @@ fn main() -> Result<(), io::Error> {
         };
         match &buf[..n] {
             [0x03] => break,
-            [b'q'] if !filter_mode => break,
-            [b'j'] | [0x1b, b'[', b'B'] if !filter_mode => index += 1,
-            [b'k'] | [0x1b, b'[', b'A'] if !filter_mode => index -= 1,
+            [b] if !filter_mode && *b == kc.quit => break,
+            [b] if !filter_mode && *b == kc.move_down => index += 1,
+            [0x1b, b'[', b'B'] if !filter_mode => index += 1,
+            [b] if !filter_mode && *b == kc.move_up => index -= 1,
+            [0x1b, b'[', b'A'] if !filter_mode => index -= 1,
             [0x1b, b'[', b'1', b';', b'3', b'D'] if !filter_mode => {
                 if let Some((target, saved_index)) = back_stack.pop() {
                     let snap = PathBuf::from(get_cwd()?);
@@ -991,14 +1089,14 @@ fn main() -> Result<(), io::Error> {
             }
             [0x04] | [0x1b, b'[', b'6', b'~'] if !filter_mode => index += half_page,
             [0x15] | [0x1b, b'[', b'5', b'~'] if !filter_mode => index -= half_page,
-            [b'?'] if !filter_mode => help_mode = !help_mode,
-            [b'B'] if !filter_mode => bookmark_mode = !bookmark_mode,
-            [b'g'] if !filter_mode => index = 0,
-            [b'G'] if !filter_mode => {
+            [b] if !filter_mode && *b == kc.help => help_mode = !help_mode,
+            [b] if !filter_mode && *b == kc.bookmark_list => bookmark_mode = !bookmark_mode,
+            [b] if !filter_mode && *b == kc.go_first => index = 0,
+            [b] if !filter_mode && *b == kc.go_last => {
                 let n = get_filtered_files(show_hidden, sort_mode, &filter)?.len();
                 index = n.saturating_sub(1) as i32;
             }
-            [b'~'] if !filter_mode => {
+            [b] if !filter_mode && *b == kc.go_home => {
                 if let Some(home) = std::env::var_os("HOME") {
                     back_stack.push((PathBuf::from(get_cwd()?), index));
                     forward_stack.clear();
@@ -1008,7 +1106,7 @@ fn main() -> Result<(), io::Error> {
                     scroll_offset = 0;
                 }
             }
-            [b'l'] | [b'\r'] | [0x1b, b'[', b'C'] if !filter_mode => {
+            [b] if !filter_mode && (*b == kc.navigate_in || *b == b'\r') => {
                 let files = get_filtered_files(show_hidden, sort_mode, &filter)?;
                 let idx = usize::try_from(index.max(0)).expect("Invalid index");
                 if idx < files.len() {
@@ -1028,7 +1126,27 @@ fn main() -> Result<(), io::Error> {
                     }
                 }
             }
-            [b'h'] | [0x1b, b'[', b'D'] if !filter_mode => {
+            [0x1b, b'[', b'C'] if !filter_mode => {
+                let files = get_filtered_files(show_hidden, sort_mode, &filter)?;
+                let idx = usize::try_from(index.max(0)).expect("Invalid index");
+                if idx < files.len() {
+                    match files[idx].path.metadata() {
+                        Ok(m) if m.is_dir() => {
+                            back_stack.push((PathBuf::from(get_cwd()?), index));
+                            forward_stack.clear();
+                            try_cd(&files[idx].path)?;
+                            filter.clear();
+                            index = 0;
+                            scroll_offset = 0;
+                        }
+                        Ok(_) => {
+                            stderr = open_in_editor(stderr, &files[idx].path)?;
+                        }
+                        Err(_) => {}
+                    }
+                }
+            }
+            [b] if !filter_mode && *b == kc.navigate_out => {
                 let cwd = get_cwd()?;
                 if cwd != "/" {
                     back_stack.push((PathBuf::from(&cwd), index));
@@ -1051,14 +1169,37 @@ fn main() -> Result<(), io::Error> {
                     }
                 }
             }
-            [b'm'] if !filter_mode => {
+            [0x1b, b'[', b'D'] if !filter_mode => {
+                let cwd = get_cwd()?;
+                if cwd != "/" {
+                    back_stack.push((PathBuf::from(&cwd), index));
+                    forward_stack.clear();
+                    let old_dir = std::path::Path::new(&cwd)
+                        .file_name()
+                        .and_then(|n| n.to_str())
+                        .unwrap_or("")
+                        .to_string();
+                    try_cd(&PathBuf::from(".."))?;
+                    filter.clear();
+                    scroll_offset = 0;
+                    let files = get_file_names(".", show_hidden, sort_mode)?;
+                    index = 0;
+                    for (i, f) in files.iter().enumerate() {
+                        if f.name == old_dir {
+                            index = i32::try_from(i).expect("Invalid index");
+                            break;
+                        }
+                    }
+                }
+            }
+            [b] if !filter_mode && *b == kc.bookmark_add => {
                 let cwd = PathBuf::from(get_cwd()?);
                 if !bookmarks.contains(&cwd) {
                     bookmarks.push(cwd);
                     save_bookmarks(&bookmarks);
                 }
             }
-            [b'M'] if !filter_mode => {
+            [b] if !filter_mode && *b == kc.bookmark_remove => {
                 let cwd = PathBuf::from(get_cwd()?);
                 let before = bookmarks.len();
                 bookmarks.retain(|b| b != &cwd);
@@ -1067,7 +1208,7 @@ fn main() -> Result<(), io::Error> {
                     save_bookmarks(&bookmarks);
                 }
             }
-            [b'\''] if !filter_mode => {
+            [b] if !filter_mode && *b == kc.bookmark_jump => {
                 let before = bookmarks.len();
                 bookmarks.retain(|b| b.is_dir());
                 if bookmarks.len() != before {
@@ -1086,23 +1227,23 @@ fn main() -> Result<(), io::Error> {
                     scroll_offset = 0;
                 }
             }
-            [b'['] if !filter_mode => {
+            [b] if !filter_mode && *b == kc.preview_up => {
                 preview_scroll = preview_scroll.saturating_sub(1);
             }
-            [b']'] if !filter_mode => {
+            [b] if !filter_mode && *b == kc.preview_down => {
                 preview_scroll = preview_scroll.saturating_add(1);
             }
-            [b'.'] if !filter_mode => {
+            [b] if !filter_mode && *b == kc.toggle_hidden => {
                 show_hidden = !show_hidden;
                 index = 0;
                 scroll_offset = 0;
             }
-            [b's'] if !filter_mode => {
+            [b] if !filter_mode && *b == kc.cycle_sort => {
                 sort_mode = sort_mode.cycle();
                 index = 0;
                 scroll_offset = 0;
             }
-            [b'o'] if !filter_mode => {
+            [b] if !filter_mode && *b == kc.open_editor => {
                 let files = get_filtered_files(show_hidden, sort_mode, &filter)?;
                 let idx = usize::try_from(index.max(0)).expect("Invalid index");
                 if idx < files.len() {
@@ -1113,7 +1254,7 @@ fn main() -> Result<(), io::Error> {
                     }
                 }
             }
-            [b'/'] if !filter_mode => {
+            [b] if !filter_mode && *b == kc.filter_start => {
                 filter_mode = true;
                 index = 0;
                 scroll_offset = 0;
