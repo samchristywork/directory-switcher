@@ -2,12 +2,24 @@
 
 binary="$(readlink -f "$(dirname "$0")/../target/release/directory-switcher")"
 config_file=~/.bashrc
-alias_line="alias ds='${binary} && cd \"\$(cat /tmp/directory-switcher-\$\$ 2>/dev/null)\" ; rm -f /tmp/directory-switcher-\$\$'"
 
-if grep -qF "alias ds" "$config_file" 2>/dev/null; then
-    echo "ds alias already present in $config_file"
+read -r -d '' func_text <<EOF
+
+ds() {
+    local out="/tmp/directory-switcher-\$\$"
+    "${binary}"
+    if [ -f "\$out" ]; then
+        local target
+        target="\$(cat "\$out")"
+        rm -f "\$out"
+        [ -n "\$target" ] && cd "\$target"
+    fi
+}
+EOF
+
+if grep -qF "function ds\|^ds()" "$config_file" 2>/dev/null || grep -qF "alias ds" "$config_file" 2>/dev/null; then
+    echo "ds function/alias already present in $config_file"
 else
-    echo "" >> "$config_file"
-    echo "$alias_line" >> "$config_file"
-    echo "Added ds alias to $config_file"
+    printf '%s\n' "$func_text" >> "$config_file"
+    echo "Added ds function to $config_file"
 fi
