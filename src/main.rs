@@ -99,45 +99,69 @@ fn print_width_highlighted(
 ) -> io::Result<()> {
     write!(stderr, "{}", cursor::Goto(x, y))?;
     let lower_content = content.to_lowercase();
-    let lower_filter = filter.to_lowercase();
-    let filter_len = lower_filter.len();
-    let mut cursor_pos = 0usize;
+
+    // Build sorted, merged underline byte-ranges for all terms.
+    let mut ranges: Vec<(usize, usize)> = Vec::new();
+    for term in filter.split_whitespace() {
+        let lower_term = term.to_lowercase();
+        let term_len = lower_term.len();
+        if term_len == 0 {
+            continue;
+        }
+        let mut search_from = 0;
+        while let Some(rel) = lower_content[search_from..].find(lower_term.as_str()) {
+            let start = search_from + rel;
+            let end = start + term_len;
+            if content.is_char_boundary(start) && content.is_char_boundary(end) {
+                ranges.push((start, end));
+            }
+            search_from = start + 1;
+        }
+    }
+    ranges.sort_unstable_by_key(|(s, _)| *s);
+    let mut merged: Vec<(usize, usize)> = Vec::new();
+    for (s, e) in ranges {
+        if let Some(last) = merged.last_mut() {
+            if s <= last.1 {
+                last.1 = last.1.max(e);
+                continue;
+            }
+        }
+        merged.push((s, e));
+    }
+
+    // Render segments with underline applied over merged ranges.
+    let mut pos = 0usize;
     let mut used = 0u16;
     let mut output = String::new();
 
-    while cursor_pos <= content.len() && used < max_cols {
-        match lower_content[cursor_pos..].find(lower_filter.as_str()) {
-            None => {
-                let (s, w) = take_cols(&content[cursor_pos..], max_cols - used);
-                output.push_str(color);
-                output.push_str(s);
-                used += w;
-                break;
-            }
-            Some(rel_pos) => {
-                let abs_pos = cursor_pos + rel_pos;
-                let abs_end = abs_pos + filter_len;
-                if !content.is_char_boundary(abs_pos) || !content.is_char_boundary(abs_end) {
-                    let (s, w) = take_cols(&content[cursor_pos..], max_cols - used);
-                    output.push_str(color);
-                    output.push_str(s);
-                    used += w;
-                    break;
-                }
-                let (pre_s, pre_w) = take_cols(&content[cursor_pos..abs_pos], max_cols - used);
-                output.push_str(color);
-                output.push_str(pre_s);
-                used += pre_w;
-                if used < max_cols {
-                    let (mid_s, mid_w) = take_cols(&content[abs_pos..abs_end], max_cols - used);
-                    output.push_str("\x1b[4m");
-                    output.push_str(mid_s);
-                    output.push_str("\x1b[0m");
-                    used += mid_w;
-                }
-                cursor_pos = abs_end;
-            }
+    for (range_start, range_end) in &merged {
+        if pos >= content.len() || used >= max_cols {
+            break;
         }
+        if pos < *range_start {
+            let (s, w) = take_cols(&content[pos..*range_start], max_cols - used);
+            output.push_str(color);
+            output.push_str(s);
+            used += w;
+            pos = *range_start;
+        }
+        if used >= max_cols {
+            break;
+        }
+        let (s, w) = take_cols(&content[*range_start..*range_end], max_cols - used);
+        output.push_str("\x1b[4m");
+        output.push_str(s);
+        output.push_str("\x1b[0m");
+        used += w;
+        pos = *range_end;
+    }
+
+    if pos < content.len() && used < max_cols {
+        let (s, w) = take_cols(&content[pos..], max_cols - used);
+        output.push_str(color);
+        output.push_str(s);
+        used += w;
     }
 
     let padding = " ".repeat((max_cols - used) as usize);
@@ -272,8 +296,14 @@ fn get_filtered_files(
 ) -> io::Result<Vec<FileInfo>> {
     let mut files = get_file_names(".", show_hidden, sort_mode)?;
     if !filter.is_empty() {
-        let fl = filter.to_lowercase();
-        files.retain(|f| f.name.to_lowercase().contains(&fl));
+        let terms: Vec<String> = filter
+            .split_whitespace()
+            .map(|t| t.to_lowercase())
+            .collect();
+        files.retain(|f| {
+            let name = f.name.to_lowercase();
+            terms.iter().all(|t| name.contains(t.as_str()))
+        });
     }
     Ok(files)
 }
