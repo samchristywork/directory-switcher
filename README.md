@@ -22,6 +22,18 @@ files directly in `$EDITOR`.
 
 ## Features
 
+- Three-pane view: parent, current, and child/preview
+- Real-time fuzzy filter with match highlighting
+- Sort by name, size, or modification time
+- Bookmarks with persistent storage
+- Navigation history (back/forward)
+- File preview for text files; symlink resolution
+- Open files in `$EDITOR` without leaving the navigator
+- Toggle hidden files
+- Mouse support (click to navigate, scroll to move)
+- File metadata display (permissions, size, modification time)
+- Fully remappable keybindings via config file
+
 ## Keybindings
 
 ## Installation
