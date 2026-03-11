@@ -57,6 +57,14 @@ files directly in `$EDITOR`.
 
 ## Installation
 
+```
+./scripts/install.sh
+```
+
+This builds the release binary and adds a `ds` shell function to your
+`~/.bashrc` or `~/.config/fish/config.fish`. After reloading your shell, run
+`ds` to launch the navigator.
+
 ## Configuration
 
 ## Dependencies
