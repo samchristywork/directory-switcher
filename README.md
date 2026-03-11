@@ -67,6 +67,20 @@ This builds the release binary and adds a `ds` shell function to your
 
 ## Configuration
 
+Copy `res/config.example` to `~/.config/directory-switcher/config` to remap
+keys. Each value must be a single character.
+
+```
+quit = q
+move_down = j
+move_up = k
+navigate_in = l
+navigate_out = h
+toggle_hidden = .
+cycle_sort = s
+open_editor = o
+```
+
 ## Dependencies
 
 ## License
