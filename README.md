@@ -16,6 +16,10 @@ The tool supports filtering entries by typing, sorting by name, size, or
 modification time, bookmarking frequently visited directories, and opening
 files directly in `$EDITOR`.
 
+<p align="center">
+  <img src="./res/screenshot.png" />
+</p>
+
 ## Features
 
 ## Keybindings
