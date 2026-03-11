@@ -36,6 +36,25 @@ files directly in `$EDITOR`.
 
 ## Keybindings
 
+| Key | Action |
+|---|---|
+| `j` / `k`, `↑` / `↓` | Move down / up |
+| `h` / `l`, `←` / `→` | Go to parent / child directory |
+| `Alt+←` / `Alt+→` | Navigate back / forward in history |
+| `g` / `G` | Jump to first / last entry |
+| `Ctrl+D` / `Ctrl+U`, `PgDn` / `PgUp` | Half-page down / up |
+| `~` | Go to `$HOME` |
+| `.` | Toggle hidden files |
+| `/` | Start filter mode |
+| `s` | Cycle sort mode (name → size → mtime) |
+| `[` / `]` | Scroll file preview up / down |
+| `o` | Open file in `$EDITOR` |
+| `m` / `M` | Add / remove bookmark for current directory |
+| `'` | Jump to next bookmark |
+| `B` | Show bookmark list |
+| `?` | Toggle help overlay |
+| `q` | Quit and `cd` to current directory |
+
 ## Installation
 
 ## Configuration
