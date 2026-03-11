@@ -2,6 +2,20 @@
 
 ## Overview
 
+Directory Switcher is a keyboard-driven terminal file navigator written in
+Rust. It presents a three-pane view (parent directory, current directory, and a
+preview of the selected item) allowing fast, intuitive navigation through the
+filesystem without leaving the terminal.
+
+When you quit the tool, it writes the current directory to a temporary file and
+a shell function (`ds`) reads it back to `cd` into the selected location. This
+makes it a practical replacement for `cd` when you need to explore before
+committing to a destination.
+
+The tool supports filtering entries by typing, sorting by name, size, or
+modification time, bookmarking frequently visited directories, and opening
+files directly in `$EDITOR`.
+
 ## Features
 
 ## Keybindings
